@@ -19,7 +19,7 @@ One HTML file, no build step, no server.
 |---|---|---|
 | Reading files, all reports, exports | yes | yes |
 | Buyer list changes | saved in this browser only | shared |
-| Online history (boss opens earlier days) | no | yes ("Update online log") |
+| Saved days (open earlier days without the main file) | yes, read back from the Google Sheet | yes ("Update online log") |
 | "Send to Google" button (monthly Google Sheet) | yes | no (button hidden) |
 
 Files are saved with a normal browser download on GitHub Pages.
@@ -36,3 +36,6 @@ SheetJS 0.18.5, xlsx-js-style 1.2.0, jsPDF 2.5.1, JSZip 3.10.1.
 3. Put your `/exec` link in `GOOGLE_DEFAULT_URL` near the end of `index.html`. Nothing needs to be typed on the page or on other devices.
 4. Load the main file and press **Send to Google**. Every day of the file is written to the monthly Google Sheet (`FLOOR REPORT OCT 2026`) and the page lists anything that does not match what was stored before.
 The script has no password: anyone who has the `/exec` link can send data to your sheet, so do not share the link publicly.
+
+## Saved days from Google (GitHub Pages version)
+When the page opens it reads the saved days from your monthly Google Sheets (last 12 months) and lists them under the history tab / "Saved days". Press **Open** on a day to see its reports without loading the main file. **Refresh from Google** reloads the list. Load the main file and press **Send to Google** only when there is new or changed data; a day that is sent again replaces the old rows of that day. After pasting a new `FloorReports.gs`, redeploy it as a **New version**.

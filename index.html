@@ -1825,9 +1825,31 @@ $('bothBtn').addEventListener('click', async () => {
   finally{ busy = false; }
 });
 
+// The web app link is built in, so every browser/device starts with it already filled in. Change it here if you redeploy the script.
+const GOOGLE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbyAEVk2bXeucixnlWDaDqDJ6Oq8SGMR4hLUFaQlx5c67u8ZOQJ9bjtFAYcVgzDJDJ7d/exec';
+const GCFG = () => { let o = {}; try{ o = JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){} return {url: o.url || GOOGLE_DEFAULT_URL}; };
+
 /* ============================================================
    HISTORY — saved days kept in the hosted page's database
    ============================================================ */
+/* Google history: on the GitHub page the saved days are read back from the monthly Google Sheet through the Apps Script link */
+const histOn = () => !!CAP.db || !!GCFG().url;
+async function gGet(params){
+  const u = GCFG().url; if(!u) throw new Error('no Google link');
+  const res = await fetch(u + '?' + new URLSearchParams(params).toString(), {redirect:'follow'});
+  const j = await res.json(); if(j && j.error) throw new Error(j.error); return j;
+}
+async function loadGoogleHist(){
+  if(CAP.db || !GCFG().url) return;
+  STATE.histErr = 'Loading saved days from Google...'; renderHistory();
+  try{
+    const j = await gGet({action:'sums'}), h = {};
+    (j.sums || []).forEach(x => { h[reprocKey(x.unit, x.iso)] = x; });
+    STATE.hist = h; STATE.histReady = true; STATE.histErr = '';
+  }catch(e){ console.error(e); STATE.histErr = 'Could not read saved days from Google: ' + (e && e.message || e) + '. Check that the Apps Script was redeployed as a New version.'; }
+  if(dashboard.style.display !== 'none') renderFinal();
+  renderHistory();
+}
 const pack = r => ({m:r.mc, c:r.cap ?? null, b:r.buyer, o:r.order, n:r.batchRaw ?? '', g:r.color, f:r.fabric, q:r.qtyRaw ?? '', l:r.loadTime, u:r.unloadTime, d:r.duration, r:r.rft, k:r.category, s:r.shade});
 function unpack(p, day, src){
   const {num, flagged} = parseQty(p.q);
@@ -1844,7 +1866,7 @@ async function writeDay(u, iso, entries){
   return true;
 }
 function startHistory(){
-  if(!CAP.db) return;
+  if(!CAP.db){ loadGoogleHist(); return; }
   CAP.db.collection('sums').onSnapshot(snap => {
     const h = {}; snap.docs.forEach(d => { h[d.id] = d.data(); });
     STATE.hist = h; STATE.histReady = true; STATE.histErr = '';
@@ -1881,12 +1903,18 @@ async function syncOnlineLog(){
 }
 $('syncBtn').addEventListener('click', syncOnlineLog);
 async function openHistoryDay(iso){
-  if(!CAP.db) return;
+  if(!histOn()) return;
   try{
     const entries = [];
     for(const u of [1,2]){
-      const snap = await CAP.db.collection('days').doc(reprocKey(u,iso)).get();
-      if(snap.exists){ const d = snap.data(); entries.push(...(d.rows||[]).map(p => unpack(p, iso, 'History · ' + labelOf(iso)))); }
+      if(CAP.db){
+        const snap = await CAP.db.collection('days').doc(reprocKey(u,iso)).get();
+        if(snap.exists){ const d = snap.data(); entries.push(...(d.rows||[]).map(p => unpack(p, iso, 'History · ' + labelOf(iso)))); }
+      }else{
+        if(!STATE.hist[reprocKey(u,iso)]) continue;
+        const j = await gGet({action:'day', unit:u, iso});
+        (j.rows||[]).forEach(a => entries.push(unpack({m:a[0], c:(a[1] === '' ? null : a[1]), b:a[2], o:a[3], n:a[4], g:a[5], f:a[6], q:a[7], l:a[8], u:a[9], d:a[10], r:a[11], k:a[12], s:a[13]}, iso, 'History · ' + labelOf(iso))));
+      }
     }
     if(!entries.length){ toast('That day has no saved rows', 'err'); return; }
     STATE.parsed = STATE.parsed.filter(r => r.iso !== iso); STATE.sources = STATE.sources.filter(s => s.iso !== iso);
@@ -1901,14 +1929,14 @@ function renderHistory(){
   historyInto($('historyPane'), 'hp');
   const home = $('historyHome');
   if(home){
-    const show = CAP.db && uploadScreen.style.display !== 'none' && Object.keys(STATE.hist).length > 0;
+    const show = histOn() && uploadScreen.style.display !== 'none' && Object.keys(STATE.hist).length > 0;
     home.style.display = show ? 'block' : 'none';
     if(show) historyInto($('historyHomeBody'), 'hh');
   }
 }
 function historyInto(el, pfx){
   if(!el) return;
-  if(!CAP.db){ el.innerHTML = '<div class="empty">History is kept on the hosted page. Open the published link to save each day and look back unit by unit. A local copy of this file cannot store history.</div>'; return; }
+  if(!histOn()){ el.innerHTML = '<div class="empty">History is kept on the hosted page. Open the published link to save each day and look back unit by unit. A local copy of this file cannot store history.</div>'; return; }
   const u = STATE.unit;
   const unitSw = `<div class="view-tabs" style="margin:0">${[1,2].map(x => `<button class="view-tab${x===u?' active':''}" data-unit="${x}">UNIT ${x}</button>`).join('')}</div>`;
   const months = [...new Set(Object.values(STATE.hist).filter(h => h.unit === u).map(h => h.iso.slice(0,7)))].sort();
@@ -1916,8 +1944,8 @@ function historyInto(el, pfx){
   if(cur && !months.includes(cur)) months.push(cur);
   months.sort();
   if(!months.includes(histMonth)) histMonth = months.includes(cur) ? cur : (months[months.length-1] || '');
-  const mainBtn = '';
-  if(!histMonth){ el.innerHTML = `<div class="hist-top">${unitSw}<div class="sec-note">${STATE.histErr ? esc(STATE.histErr) : 'Nothing saved yet. Press “Update online log” after loading the main file to keep every day here for others to open.'}</div>${mainBtn}<span class="sec-note" data-prog="1"></span></div>`; wireHist(el); return; }
+  const mainBtn = CAP.db ? '' : '<button class="btn small" data-refresh="1">Refresh from Google</button>';
+  if(!histMonth){ el.innerHTML = `<div class="hist-top">${unitSw}<div class="sec-note">${STATE.histErr ? esc(STATE.histErr) : 'Nothing saved yet. Load the main file and press “Send to Google” to keep every day here.'}</div>${mainBtn}<span class="sec-note" data-prog="1"></span></div>`; wireHist(el); return; }
   const [y,m] = histMonth.split('-').map(Number), n = daysInMonth(y,m);
   const rows = []; let sums = {B:0,C:0,D:0,F:0,H:0,J:0}, cnt = 0, maxB = 1;
   for(let d=1; d<=n; d++){ const iso = isoOf(y,m,d), h = STATE.hist[reprocKey(u,iso)]; rows.push({iso, h}); if(h){ cnt++; Object.keys(sums).forEach(k => sums[k] += h[k]); maxB = Math.max(maxB, h.B); } }
@@ -1938,6 +1966,7 @@ function historyInto(el, pfx){
 function wireHist(el){
   const sel = el.querySelector('[data-month]'); if(sel) sel.onchange = () => { histMonth = sel.value; renderHistory(); };
   const b = el.querySelector('[data-bulk]'); if(b) b.onclick = syncOnlineLog;
+  const rf = el.querySelector('[data-refresh]'); if(rf) rf.onclick = loadGoogleHist;
   el.querySelectorAll('[data-open]').forEach(x => x.onclick = () => openHistoryDay(x.dataset.open));
   el.querySelectorAll('[data-unit]').forEach(x => x.onclick = () => { STATE.unit = +x.dataset.unit; STATE.unitChosen = true; if(dashboard.style.display !== 'none') render(aggregate()); else renderHistory(); });
 }
@@ -2077,9 +2106,6 @@ $('buyerListBtn').addEventListener('click', buyerSettings);
    which writes the monthly Google Sheet and answers with anything that does not match.
    Works on the GitHub page / a local file (the claude.ai page blocks outside connections).
    ============================================================ */
-// The web app link is built in, so every browser/device starts with it already filled in. Change it here if you redeploy the script.
-const GOOGLE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbyAEVk2bXeucixnlWDaDqDJ6Oq8SGMR4hLUFaQlx5c67u8ZOQJ9bjtFAYcVgzDJDJ7d/exec';
-const GCFG = () => { let o = {}; try{ o = JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){} return {url: o.url || GOOGLE_DEFAULT_URL}; };
 async function googleSetup(){
   const g = GCFG();
   const ok = await askModal({title:'Google link', ok:'Save', body:`<p>Web app link of your Apps Script. It is already built in; change it only if you redeployed the script.</p>
@@ -2115,6 +2141,7 @@ async function sendToGoogle(){
       if(j){ if(j.error){ throw new Error(j.error); } (j.problems||[]).forEach(p => problems.push(p)); (j.changed||[]).forEach(p => changed.push(p)); }
       sent += batch.length;
     }
+    loadGoogleHist();
     const lines = [...changed.map(x => '<li><b>Changed:</b> ' + esc(x) + '</li>'), ...problems.map(x => '<li>' + esc(x) + '</li>')];
     await askModal({title:'Sent to Google', ok:'OK', cancel:null, body:`<p>${sent} unit-days sent to your monthly Google Sheet${unconfirmed ? ' (Google did not send back a confirmation, so open the sheet to check)' : ''}.</p>` +
       (lines.length ? '<p>These do not match or changed:</p><ul>' + lines.join('') + '</ul>' : (unconfirmed ? '' : '<p>Everything matches what was stored.</p>'))});
