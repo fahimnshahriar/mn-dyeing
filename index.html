@@ -242,6 +242,10 @@
   }
 
   :root{color-scheme:dark;}
+  body.view-only .actions, body.view-only #tab_flags, body.view-only #tab_entry, body.view-only #buyerListBtn, body.view-only #addFilesBtn, body.view-only #assignBox, body.view-only #pane_flags, body.view-only #pane_entry{display:none !important;}
+  body.view-only #dashboard .edit-input{pointer-events:none;opacity:.7;}
+  .view-banner{display:none;align-items:center;gap:12px;flex-wrap:wrap;background:#FFF6DD;border:1px solid #E0A339;border-radius:8px;padding:12px 16px;margin-bottom:18px;}
+  .view-banner span{flex:1;min-width:220px;}
   .actions{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:26px;display:flex;flex-direction:column;gap:10px;}
   .actions .act-title{font-size:13px;color:var(--ink-dim);}
   .actions .act-title b{color:var(--amber);font-family:'IBM Plex Mono',monospace;}
@@ -317,6 +321,7 @@ table.cat-table td .src{font-size:9.5px;padding:1px 5px;}
 /* check entry grid */
 table.entry-table{border-collapse:collapse;font-size:12px;min-width:100%;}
 table.entry-table th{background:rgba(95,168,160,.14);font-size:10.5px;letter-spacing:.03em;padding:6px 7px;border:1px solid var(--line);text-align:left;white-space:nowrap;position:sticky;top:0;}
+table.entry-table .ent-in{width:100%;min-width:70px;padding:3px 5px;font-size:12px;}
 table.entry-table td{padding:5px 7px;border:1px solid var(--line);white-space:nowrap;}
 table.entry-table td.n{text-align:right;font-family:'IBM Plex Mono',monospace;}
 table.entry-table td.rn{color:var(--ink-dim);text-align:center;background:var(--bg2);}
@@ -372,6 +377,7 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
   </div>
 
   <div id="dashboard" style="display:none;">
+    <div class="view-banner" id="viewBanner"><span id="viewBannerText"></span><button class="btn small primary" id="viewBannerBtn">Open latest file</button></div>
     <div class="topbar">
       <div class="view-tabs" id="unitTabs" style="margin-bottom:0;"></div>
       <div id="dayBarWrap"><label class="daysel">Report day <select id="daySel"></select></label><button class="btn small ghost" id="pickDayBtn">All days</button></div>
@@ -391,6 +397,8 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
         <button class="btn small" id="pngBtn">Buyer report · .png</button>
         <button class="btn small" id="pngMcBtn">MC report · .png</button>
         <button class="btn small" id="bothBtn">Everything, both units · .zip</button>
+        <button class="btn small" id="mainFixBtn" style="display:none">Corrected main file</button>
+        <button class="btn small" id="mainListBtn" style="display:none">Corrections list · .xlsx</button>
         <button class="btn small primary" id="syncBtn">Update online log</button>
         <button class="btn small primary" id="gBtn" style="display:none">Send to Google</button>
         <button class="btn small" id="gSetBtn" style="display:none" title="Change the Google link">Google link</button>
@@ -555,6 +563,7 @@ addFilesBtn.addEventListener('click', () => {
 });
 startOverBtn.addEventListener('click', resetAll);
 function resetAll(){
+  setViewOnly(false); STATE.mainBuf = null; STATE.mainName = '';
   STATE.parsed = []; STATE.sources = []; STATE.main = null; STATE.reportIso = ''; STATE.reproc = {}; STATE.fileCat = {1:{},2:{}}; nextId = 0;
   dashboard.style.display = 'none'; headActions.style.display = 'none'; sourcesStrip.style.display = 'none'; dayPicker.style.display = 'none';
   uploadScreen.style.display = 'block'; hideErr();
@@ -566,7 +575,7 @@ function readFileAsWorkbook(file){
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = evt => {
-      try{ resolve({ok:true, workbook: XLSX.read(new Uint8Array(evt.target.result), {type:'array'}), fileName:file.name}); }
+      try{ resolve({ok:true, workbook: XLSX.read(new Uint8Array(evt.target.result), {type:'array'}), fileName:file.name, buf:evt.target.result}); }
       catch(err){ resolve({ok:false, fileName:file.name, error:"couldn't read it as a spreadsheet (" + err.message + ")"}); }
     };
     reader.onerror = () => resolve({ok:false, fileName:file.name, error:"couldn't open the file"});
@@ -590,6 +599,7 @@ async function handleFiles(fileList){
   hideErr();
   loadingNote.classList.add('show');
   const files = Array.from(fileList);
+  if(STATE.viewOnly) resetAll();   // leaving the read-only synced view: start clean with the file the person opens
   const results = await Promise.all(files.map(readFileAsWorkbook));
   loadingNote.classList.remove('show');
   const failures = [];
@@ -601,7 +611,7 @@ async function handleFiles(fileList){
       const main = parseMainWorkbook(res.workbook, res.fileName);
       if(main){
         resetAll();
-        STATE.main = main; mainJustLoaded = true; addedAny = true;
+        STATE.main = main; STATE.mainBuf = res.buf; STATE.mainName = res.fileName; mainJustLoaded = true; addedAny = true;
         continue;
       }
       const picked = pickSheetRows(res.workbook);
@@ -694,7 +704,7 @@ function sortSequentially(items, keyFn, pinKey){
 }
 
 /* ---------- turn spreadsheet rows into entries ---------- */
-function makeEntries(rows, col, from, to, day, srcName){
+function makeEntries(rows, col, from, to, day, srcName, xl){
   const get = (r,key) => col[key] === -1 ? '' : (r[col[key]] ?? '');
   const out = [];
   for(let i = from; i < to; i++){
@@ -707,7 +717,7 @@ function makeEntries(rows, col, from, to, day, srcName){
     const qtyRaw = get(r,'QTY');
     const {num:qty, flagged} = parseQty(qtyRaw);
     const batchRaw = get(r,'BATCH');
-    out.push({
+    const ent = {
       id: nextId++, mc, cap: (cap===null||isNaN(cap)) ? null : cap,
       buyer: String(get(r,'BUYER')).trim(), order: String(get(r,'ORDER')).trim(),
       batch: String(batchRaw).trim(), batchRaw, qty, qtyRaw, flagged,
@@ -716,7 +726,9 @@ function makeEntries(rows, col, from, to, day, srcName){
       category: String(get(r,'CATEGORY')).trim(), color: String(get(r,'COLOR')).trim(),
       fabric: String(get(r,'FABRIC')).trim(), shade: String(get(r,'SHADE')).trim(),
       date: day.label, iso: day.iso, sourceFile: srcName,
-    });
+    };
+    if(xl){ ent.xl = {sheet:xl.sheet, row:i + xl.r0 + 1, c0:xl.c0, col}; ent.orig = {buyer:ent.buyer, order:ent.order, batch:ent.batch, category:ent.category, loadTime:ent.loadTime, unloadTime:ent.unloadTime}; }
+    out.push(ent);
   }
   return out;
 }
@@ -738,6 +750,7 @@ function extractDaily(rows, headerRowIdx, fileName){
 function parseMainWorkbook(workbook, fileName){
   const name = workbook.SheetNames.find(n => n.trim().toLowerCase() === 'sheet1') || workbook.SheetNames[0];
   const rows = sheetRows(workbook.Sheets[name]);
+  const rng0 = XLSX.utils.decode_range(workbook.Sheets[name]['!ref'] || 'A1'), xl = {sheet:name, r0:rng0.s.r, c0:rng0.s.c};
   const heads = [];
   rows.forEach((r,i) => { if(r && norm(r[0]) === 'DATE' && scoreHeaderRow(r) >= 4) heads.push(i); });
   if(heads.length < 2) return null;
@@ -776,14 +789,14 @@ function parseMainWorkbook(workbook, fileName){
       if(v !== '' && v != null && (!p || p.y !== y || p.m !== m || p.d !== d)) fixes++;
     }
     const srcName = fileName + ' · ' + day.label;
-    const entries = makeEntries(rows, col, h+1, end, day, srcName);
+    const entries = makeEntries(rows, col, h+1, end, day, srcName, xl);
     if(dayMap[day.iso]) dayMap[day.iso].entries.push(...entries);
     else dayMap[day.iso] = {iso:day.iso, label:day.label, entries, srcName};
   });
   const days = Object.values(dayMap).sort((a,b) => a.iso < b.iso ? -1 : 1);
   days.forEach(dy => assignUnitsList(dy.entries));
   if(!days.length) return null;
-  return {fileName, days, dayMap, fixes, skipped};
+  return {fileName, days, dayMap, fixes, skipped, sheetName:name};
 }
 
 /* a CATEGORY tab inside an uploaded actual file: its earlier days become history */
@@ -925,6 +938,7 @@ function commitEdit(id, field, value){
   const row = STATE.parsed.find(r => r.id === id) || (STATE.main && STATE.main.days.flatMap(d => d.entries).find(r => r.id === id));
   if(!row) return;
   row[field] = value.trim();
+  if(field === 'batch') row.batchRaw = row.batch;
   render(aggregate());
 }
 function removeSource(fileName){
@@ -1110,7 +1124,7 @@ function render(d){
       <div style="margin-top:12px"><button class="btn small primary" id="assignApply">Apply</button></div></div>`;
     document.getElementById('assignApply').addEventListener('click', () => {
       ab.querySelectorAll('select').forEach(s => { if(s.value) STATE.assign[s.dataset.buyer] = s.value; });
-      try { localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); } catch(e){}
+      try { localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); } catch(e){}
       render(aggregate());
     });
     const key = [...un.keys()].join('|');
@@ -1370,7 +1384,7 @@ function renderFinal(){
   const rows = mr.days.map(x => {
     const d = +x.iso.slice(8), today = x.iso === STATE.reportIso;
     if(!x.src) return `<tr class="${x.iso > STATE.reportIso ? 'future' : 'gap'}"><td>${dmy(x.iso)}</td><td colspan="9" class="ct-none">${x.iso > STATE.reportIso ? '' : 'no data'}</td><td></td></tr>`;
-    const h = today ? `<input class="edit-input ct-in" id="reprocInput" type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M). Counted from the sheet, change it if yours differs">` : n0(x.H);
+    const h = today ? `<input class="edit-input ct-in" id="reprocInput"${STATE.viewOnly ? ' disabled' : ''} type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M). Counted from the sheet, change it if yours differs">` : n0(x.H);
     return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td><td>${n0(x.B)}</td><td>${n0(x.C)}</td><td>${n0(x.D)}</td><td>${pct(x.D,x.B,1)}</td>
       <td>${n0(x.F)}</td><td>${pct(x.F,x.B,2)}</td><td>${h}</td><td>${pct(x.H,x.B,2)}</td><td>${n0(x.J)}</td>
       <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${x.ok?'':' <span class="src bad">check</span>'}</td></tr>`;
@@ -1435,6 +1449,7 @@ function updateActions(){
   $('actTitle').innerHTML = `Final reports · <b>UNIT ${u}</b> · ${esc(lbl)}`;
   const has = [1,2].filter(x => summarize(reportRows(x), x).hasData);
   $('bothBtn').disabled = !has.length;
+  { const n = mainChanges().length, b = $('mainFixBtn'); b.style.display = (STATE.main && STATE.mainBuf) ? '' : 'none'; b.textContent = 'Corrected main file' + (n ? ' (' + n + ' change' + (n>1?'s':'') + ')' : ''); $('mainListBtn').style.display = (STATE.main && STATE.mainBuf && n) ? '' : 'none'; }
   $('saveDayBtn').disabled = !CAP.db || !has.length || !/^\d{4}-/.test(STATE.reportIso);
   $('gBtn').style.display = CAP.db ? 'none' : '';
   $('gSetBtn').style.display = CAP.db ? 'none' : '';
@@ -1830,10 +1845,205 @@ const GOOGLE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbyAEVk2bXeuc
 const GCFG = () => { let o = {}; try{ o = JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){} return {url: o.url || GOOGLE_DEFAULT_URL}; };
 
 /* ============================================================
+   CORRECTED MAIN FILE — the original file is opened as a zip and only the corrected cells are rewritten,
+   so formats, formulas and macros stay exactly as they were.
+   ============================================================ */
+const FIX_FIELDS = {buyer:'BUYER', order:'ORDER', batch:'BATCH', category:'CATEGORY', loadTime:'LOAD', unloadTime:'UNLOAD'};
+const FIX_LABEL = {buyer:'Buyer', order:'Order', batch:'Batch no', category:'Category', loadTime:'Load time', unloadTime:'Unload time'};
+const xmlEsc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function mainChanges(){
+  const out = [];
+  if(!STATE.main) return out;
+  STATE.main.days.forEach(d => d.entries.forEach(e => {
+    if(!e.xl || !e.orig) return;
+    Object.keys(FIX_FIELDS).forEach(f => { const a = String(e.orig[f] ?? '').trim(), b = String(e[f] ?? '').trim(); if(a !== b) out.push({e, f, from:a, to:b, day:d.label}); });
+  }));
+  return out;
+}
+async function sheetPathOf(zip, sheetName){
+  const P = new DOMParser();
+  const wb = P.parseFromString(await zip.file('xl/workbook.xml').async('string'), 'application/xml');
+  const sh = Array.from(wb.getElementsByTagName('sheet')).find(x => x.getAttribute('name') === sheetName);
+  if(!sh) throw new Error('sheet "' + sheetName + '" not found in the file');
+  const rid = sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+  const rels = P.parseFromString(await zip.file('xl/_rels/workbook.xml.rels').async('string'), 'application/xml');
+  const rel = Array.from(rels.getElementsByTagName('Relationship')).find(r => r.getAttribute('Id') === rid);
+  if(!rel) throw new Error('sheet file not found');
+  const t = rel.getAttribute('Target'); return t.charAt(0) === '/' ? t.slice(1) : 'xl/' + t;
+}
+/* ---- text-level patch of the sheet XML: everything that is not a corrected cell stays byte for byte as Excel wrote it ---- */
+const CELL_RE = '<c\\s([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)';
+function timeStyleIn(xml, colN){   // style of an existing numeric time cell in this column, to give a corrected cell the same look
+  const re = new RegExp(CELL_RE, 'g'); let m;
+  while((m = re.exec(xml))){
+    const at = m[1], rm = /\br="([A-Z]+)\d+"/.exec(at); if(!rm || XLSX.utils.decode_col(rm[1]) !== colN) continue;
+    const sm = /\bs="(\d+)"/.exec(at), tm = /\bt="([^"]*)"/.exec(at), vm = /<v>([^<]*)<\/v>/.exec(m[2] || '');
+    if(sm && (!tm || tm[1] === 'n') && vm && !isNaN(parseFloat(vm[1])) && parseFloat(vm[1]) >= 0 && parseFloat(vm[1]) < 1.5) return sm[1];
+  }
+  return null;
+}
+function patchSheetXml(xml, edits){
+  const skipped = []; let formulaTouched = false; const styleCache = {};
+  for(const ed of edits){
+    const m = /^([A-Z]+)(\d+)$/.exec(ed.ref); if(!m){ skipped.push(ed.ref); continue; }
+    const colN = XLSX.utils.decode_col(m[1]), rowN = +m[2];
+    // ---- find (or make) the row
+    const rowRe = new RegExp('<row\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/row>)', 'g');
+    let rs = -1, re_ = -1, rowAttrs = '', rowInner = '';
+    const find = new RegExp('<row\\b[^>]*?\\br="' + rowN + '"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/row>)');
+    const fm = find.exec(xml);
+    if(fm){ rs = fm.index; re_ = rs + fm[0].length; const pm = new RegExp(rowRe.source).exec(fm[0]); rowAttrs = pm[1].replace(/\/$/, ''); rowInner = pm[2] || ''; }
+    else{
+      let at = -1; const all = /<row\b[^>]*?\br="(\d+)"/g; let rm;
+      while((rm = all.exec(xml))){ if(+rm[1] > rowN){ at = rm.index; break; } }
+      if(at < 0){ at = xml.indexOf('</sheetData>'); if(at < 0){ skipped.push(ed.ref); continue; } }
+      xml = xml.slice(0, at) + '<row r="' + rowN + '"></row>' + xml.slice(at);
+      rs = at; re_ = at + ('<row r="' + rowN + '"></row>').length; rowAttrs = ' r="' + rowN + '"'; rowInner = '';
+    }
+    // ---- find (or place) the cell
+    const cre = new RegExp(CELL_RE, 'g'); let cm, found = null, insertAt = rowInner.length;
+    while((cm = cre.exec(rowInner))){
+      const rr = /\br="([A-Z]+)\d+"/.exec(cm[1]); if(!rr) continue;
+      const n = XLSX.utils.decode_col(rr[1]);
+      if(n === colN){ found = {start:cm.index, end:cm.index + cm[0].length, attrs:cm[1].replace(/\/$/, ''), inner:cm[2] || ''}; break; }
+      if(n > colN){ insertAt = cm.index; break; }
+    }
+    let attrs = found ? found.attrs : ' r="' + ed.ref + '"', hadNum = false;
+    if(found){
+      const fx = /<f\b([^>]*)>|<f\b([^>]*)\/>/.exec(found.inner);
+      if(fx){ const fa = (fx[1] || fx[2] || ''); if(/t="array"/.test(fa) || (/t="shared"/.test(fa) && /\bref="/.test(fa))){ skipped.push(ed.ref); continue; } formulaTouched = true; }
+      const tm = /\bt="([^"]*)"/.exec(attrs), vm = /<v>([^<]*)<\/v>/.exec(found.inner);
+      hadNum = (!tm || tm[1] === 'n') && !!vm && vm[1] !== '' && !fx;
+      attrs = attrs.replace(/\s*\bt="[^"]*"/, '');
+    }
+    const v = String(ed.value ?? '').trim(); let cell;
+    let num = null;
+    if(v !== ''){
+      if(ed.field === 'loadTime' || ed.field === 'unloadTime'){
+        const tv = timeToCell(v);
+        if(tv !== null){
+          if(hadNum) num = tv;
+          else{ if(!(colN in styleCache)) styleCache[colN] = timeStyleIn(xml, colN); const st = styleCache[colN]; if(st !== null){ num = tv; attrs = attrs.replace(/\s*\bs="[^"]*"/, '') + ' s="' + st + '"'; } }
+        }
+      } else if((ed.field === 'batch' || ed.field === 'order') && hadNum && /^\d+(\.\d+)?$/.test(v)) num = parseFloat(v);
+    }
+    const a = attrs.trim();
+    if(v === '') cell = '<c ' + a + '/>';
+    else if(num !== null) cell = '<c ' + a + '><v>' + num + '</v></c>';
+    else cell = '<c ' + a + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(v) + '</t></is></c>';
+    // ---- put it back
+    let newInner = found ? rowInner.slice(0, found.start) + cell + rowInner.slice(found.end) : rowInner.slice(0, insertAt) + cell + rowInner.slice(insertAt);
+    let ra = rowAttrs; if(!found) ra = ra.replace(/\s*\bspans="[^"]*"/, '');
+    xml = xml.slice(0, rs) + '<row' + ra + '>' + newInner + '</row>' + xml.slice(re_);
+  }
+  return {xml, skipped, formulaTouched};
+}
+function wellFormed(str){ const d = new DOMParser().parseFromString(str, 'application/xml'); return !d.getElementsByTagName('parsererror').length; }
+const NOFOLDERS = {createFolders:false};   // the original file has no folder entries; adding them makes Excel refuse the package
+async function exportCorrectedMain(){
+  if(busy || !STATE.main || !STATE.mainBuf) return;
+  if(!window.JSZip){ toast('The zip library did not load.', 'err'); return; }
+  const ch = mainChanges();
+  if(!ch.length){ toast('No corrections yet. Fix a value in the Check entry tab (or answer a question in Needs a look), then export.', 'err'); return; }
+  const list = ch.slice(0, 12).map(c => '<li>' + esc(c.day) + ' · MC ' + esc(c.e.mc) + ' · ' + FIX_LABEL[c.f] + ': ' + esc(c.from || '(empty)') + ' → <b>' + esc(c.to || '(empty)') + '</b></li>').join('');
+  const ok = await askModal({title:'Corrected main file', ok:'Export', body:'<p>' + ch.length + ' cell' + (ch.length > 1 ? 's' : '') + ' will be changed in a copy of your original file. Everything else (formats, formulas, macros) stays as it is.</p><ul>' + list + '</ul>' + (ch.length > 12 ? '<p class="sec-note">and ' + (ch.length - 12) + ' more</p>' : '') + '<p class="sec-note">If Excel does not open the copy, use "Corrections list" instead and type the changes into your file.</p>'});
+  if(!ok) return;
+  busy = true;
+  try{
+    const zip = await JSZip.loadAsync(STATE.mainBuf);
+    const path = await sheetPathOf(zip, STATE.main.sheetName);
+    const xml0 = await zip.file(path).async('string');
+    const edits = [], skipped = [];
+    ch.forEach(c => {
+      const idx = c.e.xl.col[FIX_FIELDS[c.f]];
+      if(idx === undefined || idx < 0){ skipped.push('MC ' + c.e.mc + ' ' + FIX_LABEL[c.f] + ' (no such column in the file)'); return; }
+      edits.push({ref:XLSX.utils.encode_col(idx + c.e.xl.c0) + c.e.xl.row, value:c.to, field:c.f, c});
+    });
+    const res = patchSheetXml(xml0, edits);
+    res.skipped.forEach(r => skipped.push(r + ' (formula cell, not touched)'));
+    if(!wellFormed(res.xml)) throw new Error('the corrected sheet did not pass the self-check, nothing was saved');
+    zip.file(path, res.xml, NOFOLDERS);
+    // Excel must recalculate the formulas when it opens the copy
+    let wbx = await zip.file('xl/workbook.xml').async('string');
+    if(/<calcPr\b/.test(wbx)){ if(!/<calcPr\b[^>]*\bfullCalcOnLoad=/.test(wbx)) wbx = wbx.replace(/<calcPr\b/, '<calcPr fullCalcOnLoad="1"'); }
+    else wbx = wbx.replace(/(<oleSize\b|<customWorkbookViews\b|<pivotCaches\b|<smartTagPr\b|<smartTagTypes\b|<webPublishing\b|<fileRecoveryPr\b|<webPublishObjects\b|<extLst\b|<\/workbook>)/, '<calcPr fullCalcOnLoad="1"/>$1');
+    if(!wellFormed(wbx)) throw new Error('workbook self-check failed, nothing was saved');
+    zip.file('xl/workbook.xml', wbx, NOFOLDERS);
+    if(res.formulaTouched && zip.file('xl/calcChain.xml')){      // only needed when a formula cell was replaced by a value
+      zip.remove('xl/calcChain.xml');
+      const ct = (await zip.file('[Content_Types].xml').async('string')).replace(/<Override\b[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/, '');
+      const rl = (await zip.file('xl/_rels/workbook.xml.rels').async('string')).replace(/<Relationship\b[^>]*calcChain[^>]*\/>/, '');
+      if(!wellFormed(ct) || !wellFormed(rl)) throw new Error('package self-check failed, nothing was saved');
+      zip.file('[Content_Types].xml', ct, NOFOLDERS); zip.file('xl/_rels/workbook.xml.rels', rl, NOFOLDERS);
+    }
+    const blob = await zip.generateAsync({type:'arraybuffer', compression:'DEFLATE'});
+    // read the new file back and compare every corrected cell with what it should hold
+    const back = XLSX.read(new Uint8Array(blob), {type:'array'}), ws = back.Sheets[STATE.main.sheetName];
+    if(!ws) throw new Error('the corrected file could not be read back, nothing was saved');
+    edits.forEach(ed => {
+      if(res.skipped.includes(ed.ref)) return;
+      const c = ws[ed.ref], got = c ? c.v : '', want = String(ed.value ?? '').trim();
+      const good = typeof got === 'number' ? (want !== '' && ((timeToCell(want) !== null && Math.abs(timeToCell(want) - got) < 1e-6) || String(got) === want)) : String(got ?? '').trim() === want;
+      if(!good) skipped.push(ed.ref + ' (read back as "' + (c ? c.v : '') + '", expected "' + want + '")');
+    });
+    const nm = STATE.mainName || 'main.xlsm', ext = (/\.(xlsm|xlsx)$/i.exec(nm) || [0, 'xlsx'])[1].toLowerCase();
+    const mime = ext === 'xlsm' ? 'application/vnd.ms-excel.sheet.macroEnabled.12' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    await saveFile(nm.replace(/\.(xlsm|xlsx|xls)$/i, '') + ' - CORRECTED.' + ext, new Blob([blob], {type:mime}));
+    if(skipped.length) await askModal({title:'Check these cells', ok:'OK', cancel:null, body:'<p>These cells were not written as expected:</p><ul>' + skipped.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>'});
+  }catch(e){
+    console.error(e); toast('Could not make the corrected file: ' + (e && e.message || e) + (/\.xls$/i.test(STATE.mainName || '') ? ' (only .xlsx / .xlsm files can be corrected in place)' : ''), 'err');
+  }finally{ busy = false; }
+}
+/* fallback that always works: a plain list of the corrected cells to type into the file by hand */
+async function exportCorrectionsList(){
+  const ch = mainChanges();
+  if(!ch.length){ toast('No corrections yet.', 'err'); return; }
+  try{
+    const rows = [['DATE','MC','CELL','FIELD','WAS','NOW']];
+    ch.forEach(c => { const idx = c.e.xl.col[FIX_FIELDS[c.f]]; rows.push([c.day, c.e.mc, idx === undefined || idx < 0 ? '' : XLSX.utils.encode_col(idx + c.e.xl.c0) + c.e.xl.row, FIX_LABEL[c.f], c.from, c.to]); });
+    const ws = XLSX.utils.aoa_to_sheet(rows), wb = XLSX.utils.book_new(); ws['!cols'] = [{wch:12},{wch:8},{wch:8},{wch:14},{wch:26},{wch:26}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Corrections');
+    const out = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+    await saveFile('CORRECTIONS LIST - ' + fileDate() + '.xlsx', new Blob([out], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  }catch(e){ console.error(e); toast('Could not make the list: ' + (e && e.message || e), 'err'); }
+}
+$('mainListBtn').addEventListener('click', exportCorrectionsList);
+$('mainFixBtn').addEventListener('click', exportCorrectedMain);
+
+/* buyer list and buyer answers are kept in Google too, so every phone / PC recognizes them */
+let gSetTimer = null;
+function saveGoogleSettings(){
+  if(CAP.db) return;
+  clearTimeout(gSetTimer);
+  gSetTimer = setTimeout(async () => {
+    try{
+      const u = GCFG().url; if(!u) return;
+      await fetch(u, {method:'POST', body:JSON.stringify({action:'settings', settings:{custom:STATE.custom, assign:STATE.assign}}), redirect:'follow'});
+    }catch(e){ console.error(e); }
+  }, 800);
+}
+
+/* ============================================================
    HISTORY — saved days kept in the hosted page's database
    ============================================================ */
 /* Google history: on the GitHub page the saved days are read back from the monthly Google Sheet through the Apps Script link */
 const histOn = () => !!CAP.db || !!GCFG().url;
+/* read-only view of synced data: nothing can be edited or sent until the latest file is opened */
+let autoOpened = false;
+function setViewOnly(on){
+  STATE.viewOnly = !!on; document.body.classList.toggle('view-only', !!on);
+  const b = $('viewBanner'); if(b) b.style.display = on ? 'flex' : 'none';
+  if(on){
+    $('viewBannerText').innerHTML = '<b>Showing the last synced data' + (STATE.reportIso ? ' · ' + esc(labelOf(STATE.reportIso)) : '') + '</b> (view only, nothing can be edited). Open the latest file to check, edit and sync.';
+    if(currentView === 'flags' || currentView === 'entry') currentView = 'final';
+  }
+}
+$('viewBannerBtn').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.xlsx,.xls,.xlsm'; input.multiple = true;
+  input.addEventListener('change', e => { if(e.target.files.length) handleFiles(e.target.files); });
+  input.click();
+});
 async function gGet(params){
   const u = GCFG().url; if(!u) throw new Error('no Google link');
   const res = await fetch(u + '?' + new URLSearchParams(params).toString(), {redirect:'follow'});
@@ -1849,6 +2059,11 @@ async function loadGoogleHist(){
   }catch(e){ console.error(e); STATE.histErr = 'Could not read saved days from Google: ' + (e && e.message || e) + '. Check that the Apps Script was redeployed as a New version.'; }
   if(dashboard.style.display !== 'none') renderFinal();
   renderHistory();
+  if(!autoOpened && STATE.histReady && !STATE.parsed.length && !STATE.main){
+    autoOpened = true;
+    const isos = Object.values(STATE.hist).map(x => x.iso).filter(Boolean).sort();
+    if(isos.length) await openHistoryDay(isos[isos.length-1]);
+  }
 }
 const pack = r => ({m:r.mc, c:r.cap ?? null, b:r.buyer, o:r.order, n:r.batchRaw ?? '', g:r.color, f:r.fabric, q:r.qtyRaw ?? '', l:r.loadTime, u:r.unloadTime, d:r.duration, r:r.rft, k:r.category, s:r.shade});
 function unpack(p, day, src){
@@ -1921,6 +2136,7 @@ async function openHistoryDay(iso){
     STATE.parsed.push(...entries);
     STATE.sources.push({fileName:'History · ' + labelOf(iso), sheetName:'saved', date:labelOf(iso), iso, count:entries.length});
     STATE.reportIso = iso; currentView = 'final';
+    if(!CAP.db) setViewOnly(true);
     afterLoad();
   }catch(e){ console.error(e); toast('Could not open that day: ' + (e && e.message || e), 'err'); }
 }
@@ -2027,14 +2243,16 @@ function renderEntry(){
   $('entryBadge').textContent = bad.length ? '(' + bad.length + ')' : '';
   const show = entryOnlyBad ? bad : rows;
   const H = ['#','M/C','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','CATEGORY','SHADE','LOAD','UNLOAD','RFT','CHECK'];
+  const ec = (r, f) => (r.xl && !STATE.viewOnly) ? `<input class="edit-input ent-in" data-id="${r.id}" data-f="${f}" value="${esc(r[f])}">` : esc(r[f]);
   const trs = show.map(r => { const p = iss.get(r), i = rows.indexOf(r) + 1;
-    return `<tr class="${p.length ? 'bad' : ''}"><td class="rn">${i}</td><td class="c">${esc(r.mc)}</td><td>${r.cap ? n0(r.cap) : ''}</td><td>${esc(r.buyer)}</td><td>${esc(r.order)}</td><td class="${/same batch|batch number/.test(p.join()) ? 'x' : ''}">${esc(r.batch)}</td>
-      <td class="colour-cell">${esc(r.color)}</td><td>${esc(r.fabric)}</td><td class="n">${r.qty === null || r.qty === undefined ? '' : n0(r.qty)}</td><td>${esc(r.category)}</td><td>${esc(r.shade)}</td><td>${esc(r.loadTime)}</td><td>${esc(r.unloadTime)}</td><td>${esc(r.rft)}</td>
+    return `<tr class="${p.length ? 'bad' : ''}"><td class="rn">${i}</td><td class="c">${esc(r.mc)}</td><td>${r.cap ? n0(r.cap) : ''}</td><td>${ec(r,'buyer')}</td><td>${ec(r,'order')}</td><td class="${/same batch|batch number/.test(p.join()) ? 'x' : ''}">${ec(r,'batch')}</td>
+      <td class="colour-cell">${esc(r.color)}</td><td>${esc(r.fabric)}</td><td class="n">${r.qty === null || r.qty === undefined ? '' : n0(r.qty)}</td><td>${ec(r,'category')}</td><td>${esc(r.shade)}</td><td>${ec(r,'loadTime')}</td><td>${ec(r,'unloadTime')}</td><td>${esc(r.rft)}</td>
       <td class="chk">${p.length ? p.map(esc).join('; ') : (/[()]/.test(r.batch||'') || r.flagged ? '<span class="opn">running (brackets), not counted</span>' : '<span class="okc">OK</span>')}</td></tr>`; }).join('');
   el.innerHTML = `<div class="hist-top"><span class="sec-note"><b>UNIT ${u}</b> · ${esc(reportLabel())} · ${rows.length} rows · ${bad.length ? '<span class="badc">' + bad.length + ' rows need a look (' + nIssues + ' problems)</span>' : '<span class="okc">every row looks complete</span>'}</span>
       <label class="daysel"><input type="checkbox" id="entryBad"${entryOnlyBad ? ' checked' : ''}> show problem rows only</label></div>
     <div class="tscroll"><table class="entry-table"><thead><tr>${H.map(x => '<th>' + x + '</th>').join('')}</tr></thead><tbody>${trs || '<tr><td colspan="15" class="ct-none">No problems found.</td></tr>'}</tbody></table></div>`;
   $('entryBad').onchange = e => { entryOnlyBad = e.target.checked; renderEntry(); };
+  el.querySelectorAll('.ent-in').forEach(inp => inp.onchange = () => commitEdit(Number(inp.dataset.id), inp.dataset.f, inp.value));
 }
 
 
@@ -2044,10 +2262,20 @@ function renderEntry(){
    ============================================================ */
 function persistBuyers(){
   try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){}
+  saveGoogleSettings();
   if(CAP.db){ try{ CAP.db.collection('config').doc('buyers').set({json: JSON.stringify(STATE.custom)}).catch(() => {}); }catch(e){} }
 }
 async function loadBuyerConfig(){
-  if(!CAP.db) return;
+  if(!CAP.db){
+    try{
+      const j = await gGet({action:'settings'}), g = j.settings || {};
+      if(g.custom){ STATE.custom = {added:g.custom.added||[], grp:g.custom.grp||{}, keys:g.custom.keys||{}}; try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){} }
+      if(g.assign){ STATE.assign = g.assign; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); }catch(e){} }
+      if(!g.custom && !g.assign && (STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.assign).length)) saveGoogleSettings();   // first time: send what this browser already has
+      if(dashboard.style.display !== 'none') render(aggregate());
+    }catch(e){ console.error(e); }
+    return;
+  }
   try{
     const s = await CAP.db.collection('config').doc('buyers').get();
     if(s.exists){ const c = JSON.parse(s.data().json); STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}};
@@ -2090,7 +2318,7 @@ function buyerSettings(){
     $('bsReset').onclick = async () => { const ok = await askModal({title:'Reset buyer list', body:'<p>Remove all buyers you added and all changes you made to the list?</p>', ok:'Reset'}); if(!ok){ buyerSettings(); return; } STATE.custom = {added:[], grp:{}, keys:{}}; commit(); buyerSettings(); };
     box.querySelectorAll('tbody tr').forEach(tr => {
       const n = tr.dataset.n, mineB = STATE.custom.added.find(b => b.name === n), base = RULES.find(x => x.name === n);
-      tr.querySelector('[data-grp]').onchange = e => { if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ STATE.assign[n] = e.target.value; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(x){} } else if(mineB) mineB.grp = e.target.value; else if(base && e.target.value === base.grp) delete STATE.custom.grp[n]; else STATE.custom.grp[n] = e.target.value; commit(); draw(); };
+      tr.querySelector('[data-grp]').onchange = e => { if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ STATE.assign[n] = e.target.value; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); }catch(x){} } else if(mineB) mineB.grp = e.target.value; else if(base && e.target.value === base.grp) delete STATE.custom.grp[n]; else STATE.custom.grp[n] = e.target.value; commit(); draw(); };
       const kw = tr.querySelector('[data-kw]'); if(kw) kw.onchange = e => { const k = kwList(e.target.value);
         if(mineB) mineB.keys = k.length ? k : [n]; else if(k.length) STATE.custom.keys[n] = k; else delete STATE.custom.keys[n]; commit(); draw(); };
       const del = tr.querySelector('[data-del]'); if(del) del.onclick = () => { STATE.custom.added = STATE.custom.added.filter(b => b.name !== n); commit(); draw(); };

@@ -39,3 +39,14 @@ The script has no password: anyone who has the `/exec` link can send data to you
 
 ## Saved days from Google (GitHub Pages version)
 When the page opens it reads the saved days from your monthly Google Sheets (last 12 months) and lists them under the history tab / "Saved days". Press **Open** on a day to see its reports without loading the main file. **Refresh from Google** reloads the list. Load the main file and press **Send to Google** only when there is new or changed data; a day that is sent again replaces the old rows of that day. After pasting a new `FloorReports.gs`, redeploy it as a **New version**.
+
+**Opening the page:** the last synced day is shown first, **view only** (no editing, no export, no sync), with a yellow bar asking you to open the latest file. Opening the latest file switches to the normal screen where you can check, edit and press **Send to Google**.
+
+## Corrections and the corrected main file
+- In the **Check entry** tab (after loading the main file) the Buyer, Order, Batch no, Category, Load and Unload cells can be typed over. Answers in **Needs a look** (category, unload time) count too.
+- **Corrected main file (N changes)** makes a copy of your original file named `... - CORRECTED.xlsm`. Only the corrected cells are rewritten, so formats, formulas and macros stay as they are. Excel recalculates the formulas when it opens the copy. A list of every change is shown before it is saved. Check it, then replace the old file.
+
+## Buyer list kept in Google
+Buyers you add or correct in **Buyer list** (and the IN HOUSE / SUB answers) are saved to a small file `floor-report-settings.json` in the same Drive folder, so every phone and PC recognizes them. After pasting the new `FloorReports.gs`, redeploy it as a **New version**.
+
+**If Excel cannot open the corrected copy:** press **Corrections list · .xlsx** instead. It lists each corrected cell (cell address, was, now) so you can type the changes into your own file.
