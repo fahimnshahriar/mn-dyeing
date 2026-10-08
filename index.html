@@ -1,0 +1,2131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Floor Report Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<style>
+  :root{
+    --bg:#101C24;
+    --bg2:#16262F;
+    --card:#1B2E38;
+    --line:rgba(232,224,209,0.10);
+    --ink:#E8E0D1;
+    --ink-dim:#9FB0B4;
+    --amber:#E0A339;
+    --amber-dim:#7A5E28;
+    --teal:#5FA8A0;
+    --red:#C96A4E;
+    box-sizing:border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-padding-top: env(safe-area-inset-top, 0px);}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(224,163,57,0.07), transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'IBM Plex Mono', monospace;}
+  .wrap{max-width:1080px;margin:0 auto;padding:36px 20px 80px;}
+
+  /* header */
+  .head{
+    display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-between;
+    border-bottom:1px solid var(--line);
+    padding-bottom:22px;margin-bottom:18px;
+  }
+  .head .eyebrow{font-size:12.5px;letter-spacing:0.04em;color:var(--ink-dim);margin:0 0 6px;}
+  .head h1{font-size:26px;font-weight:600;margin:0;color:var(--ink);line-height:1.15;}
+  .head h1 span{color:var(--amber);}
+  .head-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .btn{
+    font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--ink);
+    background:transparent;border:1px solid var(--line);padding:9px 16px;border-radius:4px;
+    cursor:pointer;transition:border-color .15s;
+  }
+  .btn:hover{border-color:var(--amber);}
+  .btn.primary{background:var(--amber);color:var(--bg);border-color:var(--amber);font-weight:600;}
+  .btn.primary:hover{opacity:.92;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn.small{padding:6px 12px;font-size:12px;}
+
+  /* source chips */
+  .sources{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:34px;}
+  .src-chip{
+    display:flex;align-items:center;gap:8px;
+    background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:6px 8px 6px 13px;font-size:12px;color:var(--ink-dim);
+  }
+  .src-chip .src-date{color:var(--ink);font-family:'IBM Plex Mono',monospace;font-weight:600;}
+  .src-chip .src-file{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .src-chip button{
+    background:transparent;border:none;color:var(--ink-dim);cursor:pointer;font-size:14px;
+    line-height:1;padding:3px 5px;border-radius:50%;
+  }
+  .src-chip button:hover{color:var(--red);background:var(--bg2);}
+  .src-chip.add{cursor:pointer;border-style:dashed;color:var(--amber);padding:6px 14px;}
+  .src-chip.add:hover{border-color:var(--amber);}
+
+  /* upload panel */
+  #uploadScreen{max-width:640px;margin:60px auto;}
+  .drop{
+    border:1.5px dashed var(--line);border-radius:10px;padding:48px 28px;text-align:center;
+    background:var(--card);cursor:pointer;transition:border-color .15s, background .15s;
+  }
+  .drop.drag{border-color:var(--amber);background:var(--bg2);}
+  .drop .icon{font-size:34px;margin-bottom:14px;}
+  .drop h2{font-size:17px;font-weight:600;margin:0 0 8px;color:var(--ink);}
+  .drop p{font-size:13px;color:var(--ink-dim);margin:0 0 18px;line-height:1.5;}
+  .drop input{display:none;}
+  .hint{font-size:12px;color:var(--ink-dim);text-align:center;margin-top:16px;line-height:1.6;}
+  #errBox{
+    display:none;margin-top:16px;background:rgba(201,106,78,0.1);border:1px solid rgba(201,106,78,0.35);
+    color:#E6B29F;border-radius:6px;padding:12px 14px;font-size:12.5px;text-align:left;line-height:1.5;
+  }
+  #errBox.show{display:block;}
+  #loadingNote{display:none;text-align:center;color:var(--ink-dim);font-size:13px;margin-top:16px;}
+  #loadingNote.show{display:block;}
+
+  /* KPI strip */
+  .kpis{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;
+    margin-bottom:40px;
+  }
+  .kpi{background:var(--card);padding:20px 18px;}
+  .kpi .num{font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:600;color:var(--ink);}
+  .kpi .num small{font-size:14px;color:var(--ink-dim);font-weight:500;}
+  .kpi .lbl{font-size:12.5px;color:var(--ink-dim);margin-top:4px;}
+  .kpi.warn .num{color:var(--amber);}
+
+  section{margin-bottom:46px;}
+  .sec-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;}
+  h2{font-size:17px;font-weight:600;margin:0;color:var(--ink);}
+  .sec-note{font-size:12.5px;color:var(--ink-dim);}
+
+  /* tabs for machine / buyer */
+  .view-tabs{display:flex;gap:6px;margin-bottom:16px;}
+  .view-tab{
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--ink-dim);
+    background:transparent;border:1px solid var(--line);padding:7px 14px;border-radius:20px;cursor:pointer;
+  }
+  .view-tab.active{color:var(--bg);background:var(--amber);border-color:var(--amber);font-weight:600;}
+
+  /* grouped bars (machine + buyer) */
+  .prod-group{border-bottom:1px solid var(--line);}
+  .prod-group:last-child{border-bottom:none;}
+  .prod-group summary{
+    list-style:none;cursor:pointer;
+    display:grid;grid-template-columns:var(--label-col,74px) 1fr 78px 108px 18px;
+    gap:12px;align-items:center;padding:9px 0;
+  }
+  .prod-group summary::-webkit-details-marker{display:none;}
+  .prod-group.pinned{background:rgba(224,163,57,0.05);border-radius:6px;padding:0 10px;margin-bottom:6px;border-bottom:none;}
+  .prod-group.nobar summary{grid-template-columns:var(--label-col,74px) 1fr 108px 18px;}
+  #flagBadge{font-size:11px;opacity:.85;}
+  .card-sec{display:flex;justify-content:space-between;align-items:baseline;margin:6px 0 10px;font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--ink);}
+  .card-sec.in{background:rgba(95,168,160,.20);border-left:4px solid var(--teal);padding:9px 14px;border-radius:5px;}
+  .card-sec.sub{background:rgba(224,163,57,.18);border-left:4px solid var(--amber);padding:9px 14px;border-radius:5px;}
+  .card.in{background:rgba(95,168,160,.09);}
+  .card.sub{background:rgba(224,163,57,.09);}
+  .unit-tab{font-size:13.5px;padding:9px 18px;} .unit-tab small{font-size:11px;opacity:.8;margin-left:6px;}
+  .card-sec span{font-family:'IBM Plex Mono',monospace;color:var(--amber);font-weight:500;}
+  .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;margin-bottom:14px;}
+  .card{text-align:left;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-top:3px solid var(--teal);border-radius:8px;padding:13px 14px;cursor:pointer;display:flex;flex-direction:column;gap:9px;transition:border-color .15s,transform .15s,background .15s;}
+  .card:hover{border-color:var(--amber);transform:translateY(-1px);}
+  .card.sel{background:var(--bg2);border-color:var(--amber);box-shadow:0 0 0 1px var(--amber);}
+  .card.pinned,.card.sub{border-top-color:var(--amber);}
+  .c-top{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:18px;}
+  .c-name{font-family:'IBM Plex Mono',monospace;font-size:13.5px;font-weight:600;line-height:1.25;}
+  .c-sub{font-size:10.5px;color:var(--ink-dim);white-space:nowrap;}
+  .tag{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.05em;padding:2px 6px;border-radius:10px;border:1px solid var(--teal);color:var(--teal);white-space:nowrap;}
+  .tag.sub{border-color:var(--amber);color:var(--amber);}
+  .c-qty{font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;line-height:1;}
+  .c-qty small{font-size:11px;color:var(--ink-dim);font-weight:500;margin-left:5px;}
+  .c-foot{display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:11px;color:var(--ink-dim);}
+  .chip{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:1px 8px;font-size:10.5px;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .card-panel{background:var(--card);border:1px solid var(--amber-dim);border-radius:8px;padding:14px 16px 8px;margin:-2px 0 18px;overflow-x:auto;}
+  .card-panel h3{margin:0 0 10px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;gap:10px;}
+  .card-panel h3 span{font-family:'IBM Plex Mono',monospace;color:var(--amber);font-weight:500;}
+  .assign{background:rgba(201,106,78,0.08);border:1px solid rgba(201,106,78,0.4);border-radius:8px;padding:14px 16px;margin-bottom:16px;}
+  .assign h3{margin:0 0 4px;font-size:14px;color:#E6B29F;}
+  .assign p{margin:0 0 12px;font-size:12.5px;color:var(--ink-dim);}
+  .assign-row{display:grid;grid-template-columns:1fr 90px 230px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13px;}
+  .assign-row .mono{text-align:right;}
+  .assign select{background:var(--bg2);color:var(--ink);border:1px solid var(--amber-dim);border-radius:4px;padding:6px 8px;font-size:12.5px;width:100%;}
+  .prod-caret{color:var(--ink-dim);font-size:12px;text-align:center;transition:transform .15s;}
+  .prod-group[open] .prod-caret{transform:rotate(90deg);}
+  .prod-id{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .prod-id small{display:block;color:var(--ink-dim);font-size:10.5px;margin-top:1px;font-family:'IBM Plex Sans',sans-serif;}
+  .bar-track{position:relative;height:20px;background:var(--bg2);border-radius:3px;overflow:hidden;}
+  .bar-fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--teal),#7CC2B9);border-radius:3px;}
+  .bar-fill.low{background:linear-gradient(90deg,var(--amber-dim),var(--amber));}
+  .prod-qty{font-family:'IBM Plex Mono',monospace;font-size:13px;text-align:right;color:var(--ink);}
+  .prod-fill{font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;color:var(--ink-dim);}
+  .prod-batches{padding:2px 0 14px;overflow-x:auto;}
+  table.btab{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.btab th{
+    text-align:left;font-weight:500;color:var(--ink-dim);font-size:11px;
+    padding:0 10px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  table.btab td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);color:var(--ink);white-space:nowrap;}
+  table.btab td.mono, table.btab th.mono{font-family:'IBM Plex Mono',monospace;}
+  table.btab tr:last-child td{border-bottom:none;}
+
+  /* two-col split */
+  .split{display:grid;grid-template-columns:1.3fr 1fr;gap:32px;}
+  @media(max-width:720px){.split{grid-template-columns:1fr;} .kpis{grid-template-columns:repeat(2,1fr);}}
+
+  .stack-row{margin-bottom:14px;}
+  .stack-row .top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;}
+  .stack-row .top .name{color:var(--ink);}
+  .stack-row .top .val{font-family:'IBM Plex Mono',monospace;color:var(--ink-dim);}
+  .stack-track{height:10px;background:var(--bg2);border-radius:2px;overflow:hidden;}
+  .stack-fill{height:100%;border-radius:2px;}
+
+  .pill-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .pill{
+    display:flex;align-items:center;gap:8px;
+    background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:6px 12px 6px 8px;font-size:12.5px;
+  }
+  .pill .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .pill .n{font-family:'IBM Plex Mono',monospace;color:var(--ink-dim);}
+  .rft-legend{font-size:11.5px;color:var(--ink-dim);margin-top:10px;line-height:1.6;}
+
+  /* flags */
+  .flag-group{margin-bottom:22px;}
+  .flag-group summary{
+    cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;
+    background:var(--card);border:1px solid var(--line);border-left:3px solid var(--amber);
+    padding:12px 16px;border-radius:5px;font-size:13.5px;font-weight:600;
+  }
+  .flag-group summary::-webkit-details-marker{display:none;}
+  .flag-group summary .count{font-family:'IBM Plex Mono',monospace;font-weight:500;color:var(--amber);}
+  .flag-group summary::after{content:'+';color:var(--ink-dim);font-size:16px;margin-left:10px;}
+  .flag-group[open] summary::after{content:'–';}
+  .flag-body{padding:14px 16px 4px;font-size:13px;color:var(--ink-dim);overflow-x:auto;}
+  .flag-why{margin:0 0 12px;line-height:1.5;}
+  table.ftab{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.ftab th{
+    text-align:left;font-weight:500;color:var(--ink-dim);font-size:11px;
+    padding:0 10px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  table.ftab td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);color:var(--ink);}
+  table.ftab td.mono, table.ftab th.mono{font-family:'IBM Plex Mono',monospace;}
+  table.ftab tr:last-child td{border-bottom:none;}
+  .edit-input{
+    width:100%;min-width:140px;background:var(--bg2);border:1px solid var(--amber-dim);color:var(--ink);
+    padding:6px 8px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:12px;
+  }
+  .edit-input:focus{outline:none;border-color:var(--amber);}
+  .edit-input::placeholder{color:var(--ink-dim);}
+  .empty{font-size:13px;color:var(--ink-dim);padding:20px 0;}
+
+  footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-dim);line-height:1.6;}
+
+  @media (prefers-reduced-motion: no-preference){
+    .bar-fill,.stack-fill{transition:width 0.7s cubic-bezier(.2,.8,.2,1);}
+  }
+
+  :root{color-scheme:dark;}
+  .actions{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:26px;display:flex;flex-direction:column;gap:10px;}
+  .actions .act-title{font-size:13px;color:var(--ink-dim);}
+  .actions .act-title b{color:var(--amber);font-family:'IBM Plex Mono',monospace;}
+  .act-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .btn.ghost{color:var(--ink-dim);}
+  .topbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .daysel{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-dim);}
+  .daysel select,select.sel{background:var(--bg2);color:var(--ink);border:1px solid var(--amber-dim);border-radius:4px;padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;}
+  #dayBarWrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  #dayPicker{margin:30px 0;}
+  .daygrid-month{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.06em;color:var(--amber);margin:22px 0 10px;}
+  .daygrid-cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;}
+  .daycell{font:inherit;color:var(--ink);text-align:left;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:9px 10px;cursor:pointer;display:flex;flex-direction:column;gap:3px;}
+  .daycell:hover,.daycell:focus-visible{border-color:var(--amber);outline:none;}
+  .dc-d{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;display:flex;justify-content:space-between;align-items:baseline;}
+  .dc-d small{font-size:10.5px;color:var(--ink-dim);font-weight:500;}
+  .dc-u{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink);display:flex;justify-content:space-between;}
+  .dc-u i{font-style:normal;color:var(--ink-dim);}
+  .tscroll{overflow-x:auto;max-width:100%;}
+  table.cat-table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
+  table.cat-table th{background:rgba(95,168,160,.14);color:var(--ink);font-weight:600;font-size:11px;letter-spacing:.03em;padding:8px 10px;border:1px solid var(--line);text-align:center;white-space:nowrap;}
+  table.cat-table td{padding:6px 10px;border:1px solid var(--line);text-align:center;white-space:nowrap;font-family:'IBM Plex Mono',monospace;}
+  table.cat-table tr.today td{background:rgba(224,163,57,.12);}
+  table.cat-table tr.wrong td{color:#E6B29F;}
+  table.cat-table tr.future td,table.cat-table tr.gap td{color:var(--ink-dim);}
+  table.cat-table td.ct-none{font-family:'IBM Plex Sans',sans-serif;font-size:11.5px;color:var(--ink-dim);}
+  table.cat-table tr.ft td{background:var(--bg2);font-weight:600;}
+  table.cat-table tr.muted td{color:var(--ink-dim);}
+  .ct-in{width:92px;min-width:0;text-align:right;}
+  .src{font-family:'IBM Plex Sans',sans-serif;font-size:10px;padding:2px 7px;border-radius:10px;border:1px solid var(--line);color:var(--ink-dim);}
+  .src.today{border-color:var(--amber);color:var(--amber);} .src.history{border-color:var(--teal);color:var(--teal);} .src.bad{border-color:var(--red);color:#E6B29F;}
+  .fin-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .fin-head h3{margin:0 0 4px;font-size:15px;} .fin-head h3 span{font-family:'IBM Plex Mono',monospace;color:var(--amber);font-weight:500;font-size:13px;margin-left:6px;}
+  .note{font-size:12.5px;padding:9px 12px;border-radius:6px;border:1px solid var(--line);margin-bottom:8px;color:var(--ink-dim);line-height:1.5;}
+  .note.ok{border-color:rgba(95,168,160,.5);color:#9FD3CB;} .note.bad{border-color:rgba(201,106,78,.5);color:#E6B29F;background:rgba(201,106,78,.08);}
+  .hist-top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px;}
+  .hist-chart{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(8px,1fr);gap:3px;align-items:end;height:130px;margin-bottom:8px;}
+  .hb{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-end;height:100%;gap:3px;min-width:0;}
+  .hb-stack{flex:1;display:flex;flex-direction:column-reverse;justify-content:flex-start;}
+  .hb-stack i{display:block;width:100%;}
+  .hb span{font-size:9.5px;color:var(--ink-dim);text-align:center;font-family:'IBM Plex Mono',monospace;}
+  .hist-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--ink-dim);margin-bottom:16px;}
+  .hist-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;}
+  .modal{position:fixed;inset:0;background:rgba(5,12,16,.72);display:none;align-items:center;justify-content:center;z-index:50;padding:16px;}
+  .modal-box{background:var(--card);border:1px solid var(--amber-dim);border-radius:10px;max-width:480px;width:100%;padding:20px 22px;max-height:85vh;overflow:auto;}
+  .modal-box h3{margin:0 0 12px;font-size:16px;} .modal-box p{margin:0 0 10px;font-size:13px;line-height:1.55;color:var(--ink);}
+  .modal-box ul{margin:0 0 10px;padding-left:18px;font-size:12.5px;}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
+  .m-ok{color:#9FD3CB;} .m-bad{color:#E6B29F;}
+  .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--card);border:1px solid var(--amber-dim);color:var(--ink);padding:10px 16px;border-radius:6px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60;max-width:92vw;}
+  .toast.show{opacity:1;transform:translate(-50%,0);} .toast.err{border-color:var(--red);color:#E6B29F;}
+  .view-tabs{flex-wrap:wrap;}
+  .btn:focus-visible,.view-tab:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
+
+.colour-cell{font-weight:600;color:var(--amber);}
+.edit-input{min-width:210px;}
+.card-sec{font-size:15px !important;}
+.card-sec b{font-weight:700;letter-spacing:.06em;font-size:16px;}
+.card-sec span{font-size:17px;font-weight:700 !important;color:var(--ink) !important;}
+.bsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;width:100%;margin-bottom:6px;}
+.bbox{background:var(--card);border:1px solid var(--line);border-top:4px solid var(--teal);border-radius:8px;padding:10px 14px;}
+.bbox .bn{font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink-dim);}
+.bbox .bv{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:var(--ink);}
+.bbox .bv small{font-size:12px;color:var(--ink-dim);}
+.un-b{display:block;font-size:11px;color:var(--ink-dim);font-weight:400;line-height:1.5;margin-top:3px}
+
+/* category table fits the window */
+table.cat-table{table-layout:auto;font-size:12px;}
+table.cat-table th{white-space:normal;padding:6px 4px;font-size:10.5px;line-height:1.25;}
+table.cat-table td{padding:5px 4px;white-space:nowrap;}
+table.cat-table td .src{font-size:9.5px;padding:1px 5px;}
+.tscroll table.cat-table .edit-input.ct-in{min-width:0;width:68px;padding:3px 4px;}
+/* check entry grid */
+table.entry-table{border-collapse:collapse;font-size:12px;min-width:100%;}
+table.entry-table th{background:rgba(95,168,160,.14);font-size:10.5px;letter-spacing:.03em;padding:6px 7px;border:1px solid var(--line);text-align:left;white-space:nowrap;position:sticky;top:0;}
+table.entry-table td{padding:5px 7px;border:1px solid var(--line);white-space:nowrap;}
+table.entry-table td.n{text-align:right;font-family:'IBM Plex Mono',monospace;}
+table.entry-table td.rn{color:var(--ink-dim);text-align:center;background:var(--bg2);}
+table.entry-table td.c{text-align:center;font-weight:600;}
+table.entry-table td.chk{white-space:normal;min-width:220px;color:#E6B29F;}
+table.entry-table tr.bad td:not(.chk):not(.rn){background:rgba(201,106,78,.10);}
+table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:700;}
+.okc{color:var(--teal);font-weight:600;} .badc{color:#E6B29F;font-weight:600;}
+.opn{color:var(--ink-dim);}
+.bset{max-width:880px !important;}
+.bset-add{display:grid;grid-template-columns:1.2fr .9fr 2fr auto;gap:8px;align-items:center;}
+.bset-list{max-height:48vh;overflow:auto;}
+.bset-list td.kw{min-width:240px;white-space:normal;}
+@media (max-width:700px){.bset-add{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="head">
+    <div>
+      <p class="eyebrow">DAILY ACTUAL PRODUCTION REPORT</p>
+      <h1>Floor <span>report</span> reader</h1>
+    </div>
+    <div class="head-actions" id="headActions" style="display:none;">
+      <button class="btn small" id="buyerListBtn">Buyer list</button>
+      <button class="btn small" id="addFilesBtn">Add more files</button>
+      <button class="btn small" id="startOverBtn">Start over</button>
+    </div>
+  </div>
+
+  <div class="sources" id="sourcesStrip" style="display:none;"></div>
+
+  <div id="uploadScreen">
+    <div class="drop" id="dropZone">
+      <div class="icon">📄</div>
+      <h2>Drop the main production file or a daily floor report</h2>
+      <p>Give the main production file (.xlsm / .xlsx) and pick the day. Or give one or more daily actual floor reports. Everything is read in your browser, the files never leave this page.</p>
+      <button class="btn primary" type="button" id="chooseBtn">Choose files</button>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" multiple>
+    </div>
+    <div id="errBox"></div>
+    <div id="loadingNote">Reading file(s)…</div>
+    <p class="hint">Daily reports: a sheet named "Sheet1" with headers like DATE / MC / CAP / BUYER / ORDER / BATCH NO / QTY / LOAD TIME / UNLOAD TIME / RFT / CATEGORY, matched by header text.<br>Main production file: one block per day, each starting with its own DATE heading row. Mistyped years (like 2047) are matched to their day.</p>
+  </div>
+
+  <div id="historyHome" style="display:none;margin-top:40px;"><div class="sec-head"><h2>Saved days</h2><span class="sec-note">Open any saved day to see its machine, buyer and category reports again</span></div><div id="historyHomeBody"></div></div>
+
+  <div id="dayPicker" style="display:none;">
+    <div class="sec-head"><h2>Choose the report day</h2><span class="sec-note" id="dayPickNote"></span></div>
+    <div class="sec-note" id="dayWarn" style="margin-bottom:6px;"></div>
+    <div id="dayGrid"></div>
+  </div>
+
+  <div id="dashboard" style="display:none;">
+    <div class="topbar">
+      <div class="view-tabs" id="unitTabs" style="margin-bottom:0;"></div>
+      <div id="dayBarWrap"><label class="daysel">Report day <select id="daySel"></select></label><button class="btn small ghost" id="pickDayBtn">All days</button></div>
+    </div>
+    <div class="kpis" style="margin-top:16px;">
+      <div class="kpi"><div class="num" id="kpiQty">—</div><div class="lbl">kg confirmed produced</div></div>
+      <div class="kpi"><div class="num" id="kpiBatches">—</div><div class="lbl">batches counted, <span id="kpiMachines">—</span> machines</div></div>
+      <div class="kpi"><div class="num" id="kpiRft">—</div><div class="lbl">first-time-right rate</div></div>
+      <div class="kpi warn"><div class="num" id="kpiFlag">—</div><div class="lbl">batches held out for review</div></div>
+    </div>
+
+    <div class="actions">
+      <div class="act-title" id="actTitle"></div>
+      <div class="act-row">
+        <button class="btn small primary" id="actualBtn">Actual file · .xlsx</button>
+        <button class="btn small primary" id="exportBtn">Final file · .xlsx</button>
+        <button class="btn small" id="pngBtn">Buyer report · .png</button>
+        <button class="btn small" id="pngMcBtn">MC report · .png</button>
+        <button class="btn small" id="bothBtn">Everything, both units · .zip</button>
+        <button class="btn small primary" id="syncBtn">Update online log</button>
+        <button class="btn small primary" id="gBtn" style="display:none">Send to Google</button>
+        <button class="btn small" id="gSetBtn" style="display:none" title="Change the Google link">Google link</button>
+        <button class="btn small" id="saveDayBtn">Save this day only</button>
+      </div>
+    </div>
+
+    <div class="view-tabs">
+      <button class="view-tab active" id="tab_machine">By machine</button>
+      <button class="view-tab" id="tab_buyer">By buyer</button>
+      <button class="view-tab" id="tab_category">Category &amp; outcome</button>
+      <button class="view-tab" id="tab_final">Month report</button>
+      <button class="view-tab" id="tab_flags">Needs a look <span id="flagBadge"></span></button>
+      <button class="view-tab" id="tab_history">History</button>
+      <button class="view-tab" id="tab_entry">Check entry <span id="entryBadge"></span></button>
+    </div>
+    <div id="pane_machine"><div class="sec-note" style="margin-bottom:12px;">MC in sequence, MC 22 pinned to top · click a row to see its batches</div><div id="machineList"></div></div>
+    <div id="pane_buyer" style="display:none;"><div class="sec-note" style="margin-bottom:12px;">Same order &amp; keyword rules as the CALCULATION tab (in-house first, then sub-contract) · click a row for its batches</div><div id="assignBox"></div><div id="buyerSummary" class="pill-row" style="margin-bottom:14px;"></div><div id="buyerList"></div></div>
+    <div id="pane_category" style="display:none;"><section class="split">
+      <div><div class="sec-head"><h2>Category split</h2></div>
+        <div class="sec-note" style="margin-bottom:10px;">White, Wash, Scouring and RFD rows are rolled into one White/Wash figure</div><div id="catStack"></div></div>
+      <div><div class="sec-head"><h2>Batch outcome</h2></div><div class="pill-row" id="rftPills"></div><div class="rft-legend" id="rftLegend"></div></div>
+    </section></div>
+    <div id="pane_final" style="display:none;"><div id="finalPane"></div></div>
+    <div id="pane_flags" style="display:none;"><div class="sec-note" style="margin-bottom:12px;">Flagged the same way the sheet's own BATCHMC check does — type an answer where one is asked for and the read-out updates right away</div><div id="flagGroups"></div></div>
+    <div id="pane_history" style="display:none;"><div id="historyPane"></div></div>
+    <div id="pane_entry" style="display:none;"><div id="entryPane"></div></div>
+
+    <footer id="footNote"></footer>
+  </div>
+</div>
+<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="modal-box"><h3 id="modalTitle"></h3><div id="modalBody"></div>
+  <div class="modal-actions"><button class="btn small" id="modalCancel">Cancel</button><button class="btn small primary" id="modalOk">OK</button></div></div></div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+/* ============================================================
+   STATE — every row from every loaded file lives here, flat,
+   tagged with its source file and day. Editing a flagged field
+   changes the row in place and everything is worked out again.
+   ============================================================ */
+const STATE = { parsed: [], sources: [], assign: {}, asked: '', unit: 1, unitChosen: false,
+  main: null,            // {fileName, days:[{iso,label,entries}], dayMap, fixes, skipped}
+  reportIso: '',         // the day every final report is built for
+  reproc: {},            // typed REPROCESS kg per "u1_2026-10-05"
+  hist: {}, histReady: false, histErr: '',   // saved-day summaries from the hosted database
+  fileCat: {1:{}, 2:{}}  // days read from a CATEGORY tab of an uploaded actual file
+};
+try { STATE.assign = JSON.parse(localStorage.getItem('frr_assign') || '{}'); } catch(e){}
+/* your own changes to the buyer list (kept apart from the built-in list): added buyers, IN/SUB switches, extra keywords */
+STATE.custom = {added:[], grp:{}, keys:{}};
+try { const c = JSON.parse(localStorage.getItem('frr_buyers') || 'null'); if(c) STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}}; } catch(e){}
+function effectiveRules(){
+  const R = RULES.map(x => ({...x, grp: STATE.custom.grp[x.name] || x.grp, keys:[...x.keys, ...(x.exact ? [] : (STATE.custom.keys[x.name]||[]))]}));
+  STATE.custom.added.forEach(b => R.push({name:b.name, grp:b.grp, keys:[...b.keys], exact:false, custom:true}));
+  Object.entries(STATE.assign).forEach(([name, v]) => {
+    if(v==='IN' || v==='SUB') R.push({name, grp:v, keys:[name], exact:false});
+    else { const t = R.find(x => x.name===v.slice(6)); if(t) t.keys.push(name); }
+  });
+  return R;
+}
+let nextId = 0;
+let currentView = 'machine';
+
+const $ = id => document.getElementById(id);
+const pad2 = n => String(n).padStart(2,'0');
+const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+const MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const isoOf = (y,m,d) => y + '-' + pad2(m) + '-' + pad2(d);
+const labelOf = iso => /^\d{4}-\d\d-\d\d$/.test(iso) ? iso.slice(8) + '.' + iso.slice(5,7) + '.' + iso.slice(0,4) : String(iso);
+const daysInMonth = (y,m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const WEEKDAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const weekdayOf = iso => WEEKDAY[new Date(iso + 'T00:00:00Z').getUTCDay()];
+function serialParts(s){ const dt = new Date(Math.round((s - 25569) * 86400000)); return {y:dt.getUTCFullYear(), m:dt.getUTCMonth()+1, d:dt.getUTCDate()}; }
+function cellDateParts(v){
+  if(typeof v === 'number' && v > 20000 && v < 80000) return serialParts(v);
+  if(typeof v === 'string'){
+    const m = v.trim().match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
+    if(m){ let y = +m[3]; if(y < 100) y += 2000; const d = +m[1], mo = +m[2];
+      if(mo>=1 && mo<=12 && d>=1 && d<=31) return {y, m:mo, d}; }
+  }
+  return null;
+}
+function fmtTimeCell(v){
+  if(typeof v === 'number'){ const mins = Math.round((v % 1) * 1440) % 1440; return pad2(Math.floor(mins/60)) + ':' + pad2(mins%60); }
+  return String(v ?? '').trim();
+}
+/* "08:30" / "8:30 PM" -> fraction of a day for Excel; anything else stays text */
+function timeToCell(s){
+  const m = String(s||'').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if(!m) return null;
+  let h = +m[1]; const mi = +m[2];
+  if(m[3]){ const pm = m[3].toUpperCase()==='PM'; if(pm && h<12) h += 12; if(!pm && h===12) h = 0; }
+  if(h>23 || mi>59) return null;
+  return (h*60 + mi) / 1440;
+}
+
+const KNOWN_CATEGORIES = ['COLOR','WHITE','DPD','SCOURING','WASH','RFD'];
+const WHITE_WASH_GROUP = new Set(['WHITE','WASH','SCOURING','RFD']);
+const FILL_TARGET = 0.8;
+const RFT_LABELS = {
+  'RFT': 'First Time Right',
+  'R/M': 'Rematch', 'RM': 'Rematch', 'R.M': 'Rematch',
+  'R/W': 'Re Wash', 'RW': 'Re Wash', 'R.W': 'Re Wash',
+};
+
+/* ---------- DOM refs ---------- */
+const dropZone = $('dropZone'), fileInput = $('fileInput'), chooseBtn = $('chooseBtn');
+const errBox = $('errBox'), loadingNote = $('loadingNote');
+const uploadScreen = $('uploadScreen'), dashboard = $('dashboard'), dayPicker = $('dayPicker');
+const headActions = $('headActions'), sourcesStrip = $('sourcesStrip');
+const addFilesBtn = $('addFilesBtn'), startOverBtn = $('startOverBtn');
+const machineList = $('machineList'), buyerList = $('buyerList');
+
+/* ---------- small UI helpers (the hosted page cannot use alert / confirm) ---------- */
+let toastTimer = null;
+function toast(msg, kind){
+  const t = $('toast'); t.textContent = msg; t.className = 'toast show ' + (kind||'');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), kind==='err' ? 7000 : 3800);
+}
+function askModal(o){
+  return new Promise(resolve => {
+    const m = $('modal');
+    $('modalTitle').textContent = o.title || '';
+    $('modalBody').innerHTML = o.body || '';
+    const ok = $('modalOk'), cancel = $('modalCancel');
+    ok.textContent = o.ok || 'OK'; ok.style.display = o.ok === null ? 'none' : '';
+    cancel.textContent = o.cancel || 'Cancel'; cancel.style.display = o.cancel === null ? 'none' : '';
+    const done = v => { m.style.display = 'none'; ok.onclick = cancel.onclick = null; resolve(v); };
+    ok.onclick = () => done(true); cancel.onclick = () => done(false);
+    m.style.display = 'flex'; (o.ok === null ? cancel : ok).focus();
+  });
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- saving files: hosted page uses the viewer's save prompt, a local copy downloads directly ---------- */
+let CAP = {db:null, downloads:null};
+async function saveFile(name, data){
+  if(CAP.downloads){
+    try { await CAP.downloads.save({filename:name, data}); toast('Saved ' + name); return true; }
+    catch(e){ if(e && e.code === 'declined'){ toast('Save cancelled'); return false; }
+      toast('Could not save ' + name + (e && e.message ? ' — ' + e.message : ''), 'err'); return false; }
+  }
+  const blob = data instanceof Blob ? data : new Blob([data]);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return true;
+}
+
+/* ---------- file intake ---------- */
+chooseBtn.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('click', (e) => { if(e.target === chooseBtn) return; fileInput.click(); });
+fileInput.addEventListener('change', e => { if(e.target.files.length) handleFiles(e.target.files); fileInput.value=''; });
+['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('drag'); }));
+dropZone.addEventListener('drop', e => { if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+addFilesBtn.addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.xlsx,.xls,.xlsm'; input.multiple = true;
+  input.addEventListener('change', e => { if(e.target.files.length) handleFiles(e.target.files); });
+  input.click();
+});
+startOverBtn.addEventListener('click', resetAll);
+function resetAll(){
+  STATE.parsed = []; STATE.sources = []; STATE.main = null; STATE.reportIso = ''; STATE.reproc = {}; STATE.fileCat = {1:{},2:{}}; nextId = 0;
+  dashboard.style.display = 'none'; headActions.style.display = 'none'; sourcesStrip.style.display = 'none'; dayPicker.style.display = 'none';
+  uploadScreen.style.display = 'block'; hideErr();
+}
+function showErr(msg){ errBox.innerHTML = msg; errBox.classList.add('show'); }
+function hideErr(){ errBox.classList.remove('show'); errBox.innerHTML=''; }
+
+function readFileAsWorkbook(file){
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try{ resolve({ok:true, workbook: XLSX.read(new Uint8Array(evt.target.result), {type:'array'}), fileName:file.name}); }
+      catch(err){ resolve({ok:false, fileName:file.name, error:"couldn't read it as a spreadsheet (" + err.message + ")"}); }
+    };
+    reader.onerror = () => resolve({ok:false, fileName:file.name, error:"couldn't open the file"});
+    reader.readAsArrayBuffer(file);
+  });
+}
+const sheetRows = ws => XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+
+function pickSheetRows(workbook){
+  const names = workbook.SheetNames;
+  const s1 = names.find(n => n.trim().toLowerCase() === 'sheet1');
+  const order = s1 ? [s1, ...names.filter(n => n !== s1)] : names;
+  for(const name of order){
+    const rows = sheetRows(workbook.Sheets[name]);
+    try{ return {sheetName:name, rows, headerRowIdx: findHeaderRow(rows)}; }catch(e){ /* try next sheet */ }
+  }
+  return null;
+}
+
+async function handleFiles(fileList){
+  hideErr();
+  loadingNote.classList.add('show');
+  const files = Array.from(fileList);
+  const results = await Promise.all(files.map(readFileAsWorkbook));
+  loadingNote.classList.remove('show');
+  const failures = [];
+  let addedAny = false, mainJustLoaded = false;
+
+  for(const res of results){
+    if(!res.ok){ failures.push(res.fileName + ' — ' + res.error); continue; }
+    try{
+      const main = parseMainWorkbook(res.workbook, res.fileName);
+      if(main){
+        resetAll();
+        STATE.main = main; mainJustLoaded = true; addedAny = true;
+        continue;
+      }
+      const picked = pickSheetRows(res.workbook);
+      if(!picked){ failures.push(res.fileName + ' — no sheet with the expected columns (MC, QTY, CATEGORY, RFT…) in the first 10 rows of any sheet'); continue; }
+      const {entries, date, iso, count} = extractDaily(picked.rows, picked.headerRowIdx, res.fileName);
+      readCategoryTab(res.workbook);
+      STATE.parsed.push(...entries);
+      STATE.sources.push({fileName:res.fileName, sheetName:picked.sheetName, date, iso, count});
+      addedAny = true;
+    }catch(e){ failures.push(res.fileName + ' — ' + e.message); }
+  }
+  if(failures.length) showErr("Couldn't read " + failures.length + ' file' + (failures.length>1?'s':'') + ':<br>' + failures.map(f=>'• '+f).join('<br>'));
+  if(!addedAny) return;
+
+  if(mainJustLoaded && !STATE.sources.length){ showDayPicker(); return; }
+  afterLoad();
+}
+function afterLoad(){
+  uploadScreen.style.display = 'none'; dayPicker.style.display = 'none';
+  dashboard.style.display = 'block'; headActions.style.display = 'flex';
+  const isos = loadedIsos();
+  if(!STATE.reportIso || !isos.includes(STATE.reportIso)) STATE.reportIso = isos[isos.length-1] || '';
+  render(aggregate());
+}
+const loadedIsos = () => [...new Set(STATE.parsed.map(r => r.iso).filter(Boolean))].sort();
+
+/* ---------- header detection ---------- */
+const HEADER_ALIASES = {
+  DATE: ['DATE'], MC: ['MC','MACHINE','M/C'], CAP: ['CAP','CAPACITY'], BUYER: ['BUYER'], ORDER: ['ORDER'],
+  BATCH: ['BATCH NO','BATCH'], QTY: ['QTY'], LOAD: ['LOAD TIME','LOAD'], UNLOAD: ['UNLOAD TIME','UNLOAD'],
+  DURATION: ['DURATION'], RFT: ['RFT'], CATEGORY: ['CATEGORY'], SHADE: ['SHADE'], COLOR: ['COLOR'], FABRIC: ['FABRICATION','FABRIC']
+};
+function norm(s){ return (s===null||s===undefined) ? '' : String(s).trim().toUpperCase(); }
+function scoreHeaderRow(row){
+  let score = 0; const cells = row.map(norm);
+  Object.keys(HEADER_ALIASES).forEach(key => {
+    const aliases = HEADER_ALIASES[key];
+    if(cells.some(c => aliases.some(a => c === a || (key==='QTY' && c.indexOf('QTY')===0) || (key==='BATCH' && c.indexOf('BATCH')===0)))) score++;
+  });
+  return score;
+}
+function findHeaderRow(rows){
+  let best = -1, bestScore = 0;
+  for(let i=0; i<Math.min(rows.length,10); i++){ const sc = scoreHeaderRow(rows[i] || []); if(sc > bestScore){ bestScore = sc; best = i; } }
+  if(best === -1 || bestScore < 4) throw new Error('no header row with the expected columns found in the first 10 rows');
+  return best;
+}
+function mapColumns(headerRow){
+  const cells = headerRow.map(norm), colIndex = {};
+  Object.keys(HEADER_ALIASES).forEach(key => {
+    const aliases = HEADER_ALIASES[key];
+    let idx = cells.findIndex(c => aliases.some(a => c === a));
+    if(idx === -1 && key === 'QTY') idx = cells.findIndex(c => c.indexOf('QTY') === 0);
+    if(idx === -1 && key === 'BATCH') idx = cells.findIndex(c => c.indexOf('BATCH') === 0);
+    colIndex[key] = idx;
+  });
+  // the main production sheet has no heading over the DURATION column
+  if(colIndex.DURATION === -1 && colIndex.UNLOAD > -1 && colIndex.RFT > colIndex.UNLOAD + 1) colIndex.DURATION = colIndex.UNLOAD + 1;
+  return colIndex;
+}
+
+/* ---------- value parsing ---------- */
+function parseQty(raw){
+  if(raw === '' || raw === null || raw === undefined) return {num:null, flagged:false};
+  const s = String(raw);
+  const flagged = s.indexOf('(') !== -1 || s.indexOf(')') !== -1;
+  const numStr = s.replace(/[^0-9.]/g,'');
+  const num = numStr === '' ? null : parseFloat(numStr);
+  return {num: (num===null || isNaN(num)) ? null : num, flagged};
+}
+function parseDurationHours(s){
+  if(!s) return null;
+  const m = String(s).match(/(\d+)\s*hr\s*(\d+)\s*min/i);
+  return m ? parseInt(m[1],10) + parseInt(m[2],10)/60 : null;
+}
+function sortSequentially(items, keyFn, pinKey){
+  const numeric = [], nonNumeric = [];
+  items.forEach(it => {
+    const k = keyFn(it), n = parseInt(k, 10);
+    if(!isNaN(n) && String(n) === k.trim()) numeric.push({...it, __n:n}); else nonNumeric.push(it);
+  });
+  numeric.sort((a,b) => a.__n - b.__n);
+  nonNumeric.sort((a,b) => keyFn(a).localeCompare(keyFn(b)));
+  const ordered = [...numeric, ...nonNumeric];
+  if(pinKey){
+    const pinIdx = ordered.findIndex(it => keyFn(it).trim() === String(pinKey));
+    if(pinIdx > 0){ const [pinned] = ordered.splice(pinIdx, 1); ordered.unshift(pinned); }
+  }
+  return ordered;
+}
+
+/* ---------- turn spreadsheet rows into entries ---------- */
+function makeEntries(rows, col, from, to, day, srcName){
+  const get = (r,key) => col[key] === -1 ? '' : (r[col[key]] ?? '');
+  const out = [];
+  for(let i = from; i < to; i++){
+    const r = rows[i];
+    if(!r || !r.some(c => c !== '' && c !== undefined && c !== null)) continue;
+    const mc = String(get(r,'MC')).trim();
+    if(mc === '' || /^(MC|MACHINE|M\/C)$/i.test(mc)) continue;       // stray totals, repeated headings
+    const capRaw = get(r,'CAP');
+    const cap = capRaw === '' ? null : parseFloat(String(capRaw).replace(/[^0-9.]/g,''));
+    const qtyRaw = get(r,'QTY');
+    const {num:qty, flagged} = parseQty(qtyRaw);
+    const batchRaw = get(r,'BATCH');
+    out.push({
+      id: nextId++, mc, cap: (cap===null||isNaN(cap)) ? null : cap,
+      buyer: String(get(r,'BUYER')).trim(), order: String(get(r,'ORDER')).trim(),
+      batch: String(batchRaw).trim(), batchRaw, qty, qtyRaw, flagged,
+      loadTime: fmtTimeCell(get(r,'LOAD')), unloadTime: fmtTimeCell(get(r,'UNLOAD')),
+      duration: String(get(r,'DURATION')).trim(), rft: String(get(r,'RFT')).trim(),
+      category: String(get(r,'CATEGORY')).trim(), color: String(get(r,'COLOR')).trim(),
+      fabric: String(get(r,'FABRIC')).trim(), shade: String(get(r,'SHADE')).trim(),
+      date: day.label, iso: day.iso, sourceFile: srcName,
+    });
+  }
+  return out;
+}
+
+/* a daily floor report: one day per file */
+function extractDaily(rows, headerRowIdx, fileName){
+  const col = mapColumns(rows[headerRowIdx]);
+  ['MC','QTY','CATEGORY','RFT'].forEach(k => { if(col[k] === -1) throw new Error('missing a "' + k + '" column'); });
+  let dateVal = '';
+  for(let i = headerRowIdx+1; i < rows.length && col.DATE > -1; i++){ const v = rows[i][col.DATE]; if(v !== '' && v != null && cellDateParts(v)){ dateVal = v; break; } }
+  const p = cellDateParts(dateVal);
+  const day = p ? {iso:isoOf(p.y,p.m,p.d), label:pad2(p.d)+'.'+pad2(p.m)+'.'+p.y} : {iso:'', label:fileName};
+  const entries = makeEntries(rows, col, headerRowIdx+1, rows.length, day, fileName);
+  entries.forEach(e => { if(!e.iso) e.iso = 'file:' + fileName; });
+  return {entries, date: day.label, iso: day.iso || ('file:' + fileName), count: entries.length};
+}
+
+/* the Main Production file: one block per day, each starting with its own DATE heading row */
+function parseMainWorkbook(workbook, fileName){
+  const name = workbook.SheetNames.find(n => n.trim().toLowerCase() === 'sheet1') || workbook.SheetNames[0];
+  const rows = sheetRows(workbook.Sheets[name]);
+  const heads = [];
+  rows.forEach((r,i) => { if(r && norm(r[0]) === 'DATE' && scoreHeaderRow(r) >= 4) heads.push(i); });
+  if(heads.length < 2) return null;
+
+  const yearVotes = {};
+  rows.forEach(r => { const p = cellDateParts(r && r[0]); if(p && p.y >= 2000 && p.y <= 2100) yearVotes[p.y] = (yearVotes[p.y]||0) + 1; });
+  const gy = +Object.entries(yearVotes).sort((a,b) => b[1]-a[1])[0]?.[0] || new Date().getFullYear();
+
+  const dayMap = {}; let fixes = 0; const skipped = []; let prevT = null;
+  heads.forEach((h, k) => {
+    const end = k+1 < heads.length ? heads[k+1] : rows.length;
+    const col = mapColumns(rows[h]);
+    const votes = {}, yv = {};
+    for(let i = h+1; i < end; i++){
+      const p = cellDateParts(rows[i][0]); if(!p || Math.abs(p.y - gy) > 1) continue;
+      const key = p.m + '-' + p.d; votes[key] = (votes[key]||0) + 1; yv[p.y] = (yv[p.y]||0) + 1;
+    }
+    if(!Object.keys(votes).length){       // every year in this block is mistyped: trust day and month, take the file's year
+      for(let i = h+1; i < end; i++){ const p = cellDateParts(rows[i][0]); if(!p) continue; const key = p.m + '-' + p.d; votes[key] = (votes[key]||0) + 1; }
+      yv[gy] = 1;
+    }
+    const top = Object.entries(votes).sort((a,b) => b[1]-a[1])[0];
+    if(!top){ skipped.push('block starting at row ' + (h+1)); return; }
+    const [m, d] = top[0].split('-').map(Number);
+    let y = +Object.entries(yv).sort((a,b) => b[1]-a[1])[0][0];
+    /* a day sheet follows the previous one: pick the year that puts this date right after it (fixes 07.10.2024 / 2025 typos) */
+    if(prevT !== null){
+      let best = null;
+      [gy-1, gy, gy+1].forEach(cy => { const t = Date.UTC(cy, m-1, d), gap = Math.abs(t - (prevT + 86400000)); if(best === null || gap < best.gap) best = {cy, gap}; });
+      if(best) y = best.cy;
+    }
+    prevT = Date.UTC(y, m-1, d);
+    const day = {iso:isoOf(y,m,d), label:pad2(d)+'.'+pad2(m)+'.'+y};
+    for(let i = h+1; i < end; i++){
+      const p = cellDateParts(rows[i][0]); const v = rows[i][0];
+      if(v !== '' && v != null && (!p || p.y !== y || p.m !== m || p.d !== d)) fixes++;
+    }
+    const srcName = fileName + ' · ' + day.label;
+    const entries = makeEntries(rows, col, h+1, end, day, srcName);
+    if(dayMap[day.iso]) dayMap[day.iso].entries.push(...entries);
+    else dayMap[day.iso] = {iso:day.iso, label:day.label, entries, srcName};
+  });
+  const days = Object.values(dayMap).sort((a,b) => a.iso < b.iso ? -1 : 1);
+  days.forEach(dy => assignUnitsList(dy.entries));
+  if(!days.length) return null;
+  return {fileName, days, dayMap, fixes, skipped};
+}
+
+/* a CATEGORY tab inside an uploaded actual file: its earlier days become history */
+function readCategoryTab(workbook){
+  const name = workbook.SheetNames.find(n => n.trim().toUpperCase() === 'CATEGORY');
+  if(!name) return;
+  const rows = sheetRows(workbook.Sheets[name]);
+  let unit = 1;
+  rows.slice(0,8).forEach(r => r.forEach(c => { const m = String(c).match(/UNIT\s*-\s*(\d)/i); if(m) unit = +m[1]; }));
+  rows.forEach(r => {
+    const p = cellDateParts(r[0]); if(!p || typeof r[1] !== 'number' || r[1] <= 0) return;
+    const n = x => typeof x === 'number' ? x : 0;
+    STATE.fileCat[unit][isoOf(p.y,p.m,p.d)] = {B:n(r[1]), C:n(r[2]), D:n(r[3]), F:n(r[5]), H:n(r[7]), J:n(r[9])};
+  });
+}
+
+/* ---------- BUYER RULES — copied from the CALCULATION tab of the FINAL PRODUCTION REPORT ----------
+   keys = SEARCH("text",TRIM(BUYER)) substring matches (case-insensitive); exact = SUMIF match.
+   Order = row order on the CALCULATION tab. grp IN = in-house (MASL buyers), SUB = sub-contract. */
+const RULES = [{"name":"AMERICAN","grp":"IN","keys":["american"],"exact":false},{"name":"ARDON","grp":"IN","keys":["ARDON"],"exact":false},{"name":"AEON","grp":"IN","keys":["aeon"],"exact":false},{"name":"AS COLOR","grp":"IN","keys":["as col"],"exact":false},{"name":"CAPRICON","grp":"IN","keys":["CAPRICON"],"exact":false},{"name":"CISALFA","grp":"IN","keys":["cisalfa"],"exact":false},{"name":"COTTON HERITAGE","grp":"IN","keys":["cotton"],"exact":false},{"name":"ICE BERG","grp":"IN","keys":["ICE"],"exact":false},{"name":"B&C","grp":"IN","keys":["B&C"],"exact":false},{"name":"MATALAN","grp":"IN","keys":["MATALAN"],"exact":false},{"name":"NEW YORKER","grp":"IN","keys":["NEW"],"exact":false},{"name":"LPP","grp":"IN","keys":["lpp"],"exact":false},{"name":"FASHION UK","grp":"IN","keys":["FASHION U"],"exact":false},{"name":"PROMOSET","grp":"IN","keys":["PROMOSET"],"exact":false},{"name":"DMR","grp":"IN","keys":["dmr"],"exact":false},{"name":"MALFINI","grp":"IN","keys":["MALFINI"],"exact":false},{"name":"CENTENLINE","grp":"IN","keys":["CENTE"],"exact":false},{"name":"ALL GOODS","grp":"IN","keys":["ALL GOO"],"exact":false},{"name":"SALLING","grp":"IN","keys":["SALLING","SAILING"],"exact":false},{"name":"MN DYEING","grp":"IN","keys":["MN D"],"exact":false},{"name":"CAMEL","grp":"IN","keys":["CAMEL"],"exact":false},{"name":"DUCATI","grp":"IN","keys":["DUCATI","DUKATI"],"exact":false},{"name":"KAUFMANN","grp":"IN","keys":["kaufman"],"exact":false},{"name":"RECOVARY FAB","grp":"IN","keys":["RECOV"],"exact":false},{"name":"EL CORTE","grp":"IN","keys":["EL C"],"exact":false},{"name":"MODYF","grp":"IN","keys":["modyf"],"exact":false},{"name":"KSL","grp":"IN","keys":["kSL"],"exact":false},{"name":"HENRY","grp":"IN","keys":["HENRY"],"exact":false},{"name":"KARIBAN","grp":"IN","keys":["kariban"],"exact":false},{"name":"NUTMEG","grp":"IN","keys":["nut"],"exact":false},{"name":"WELLENSTEYN","grp":"IN","keys":["WELL"],"exact":false},{"name":"MAYORAL","grp":"IN","keys":["mayo"],"exact":false},{"name":"P&C","grp":"IN","keys":["p&"],"exact":false},{"name":"LIMA","grp":"IN","keys":["lima"],"exact":false},{"name":"ANTHEM","grp":"IN","keys":["anthem"],"exact":false},{"name":"ZXY","grp":"IN","keys":["ZXY"],"exact":true},{"name":"ALIB","grp":"SUB","keys":["alib"],"exact":false},{"name":"APEX","grp":"SUB","keys":["apex"],"exact":false},{"name":"APS","grp":"SUB","keys":["aps"],"exact":false},{"name":"MANAMI","grp":"SUB","keys":["manami"],"exact":false},{"name":"FORTIS","grp":"SUB","keys":["fortis"],"exact":false},{"name":"FOUR H","grp":"SUB","keys":["four"],"exact":false},{"name":"AKH","grp":"SUB","keys":["AKH"],"exact":false},{"name":"HABITUS","grp":"SUB","keys":["habitus"],"exact":false},{"name":"HAMS","grp":"SUB","keys":["hams"],"exact":false},{"name":"JM","grp":"SUB","keys":["JM","GS"],"exact":false},{"name":"KA DESIGN","grp":"SUB","keys":["ka design"],"exact":false},{"name":"INTIMATE","grp":"SUB","keys":["INTIMATE"],"exact":false},{"name":"SUPREME","grp":"SUB","keys":["supr"],"exact":false},{"name":"LIZ","grp":"SUB","keys":["liz","lida"],"exact":false},{"name":"fashion asia","grp":"SUB","keys":["FASHION A","DUKATI"],"exact":false},{"name":"MS FABRICS","grp":"SUB","keys":["ms fa"],"exact":false},{"name":"PENTAGON","grp":"SUB","keys":["pent"],"exact":false},{"name":"RADIANCE","grp":"SUB","keys":["radia"],"exact":false},{"name":"RAGADI","grp":"SUB","keys":["ragadi"],"exact":false},{"name":"RHINO","grp":"SUB","keys":["rhino"],"exact":false},{"name":"SILKEN","grp":"SUB","keys":["silken"],"exact":false},{"name":"MARB TEX","grp":"SUB","keys":["marb","ONE COMP"],"exact":false},{"name":"SQ","grp":"SUB","keys":["sq"],"exact":false},{"name":"AC MILAN","grp":"SUB","keys":["AC M"],"exact":false}];
+function buyerReport(parsed){
+  const prod = parsed.filter(r => r.mc && !r.flagged && r.qty !== null);
+  const isSample = r => /SAMPLE/i.test(r.mc);
+  const buy = prod.filter(r => !isSample(r));
+  const U = s => (s||'').trim().toUpperCase();
+  /* a batch is counted ONCE: under the rule whose name matches most specifically
+     (exact match first, then the longest keyword), so "ZXY" never also takes "ZXY GILDEN" */
+  const score = (R,r) => { let best = 0;
+    R.keys.forEach(k => { if(R.exact){ if(U(r.buyer)===k) best = Math.max(best, 1000+k.length); }
+      else if(U(r.buyer).includes(k.toUpperCase())) best = Math.max(best, k.length); });
+    return best; };
+  const rules = effectiveRules(), won = new Map(), matchCount = new Map();
+  buy.forEach(r => { let bi = -1, bs = 0, n = 0;
+    rules.forEach((R,i) => { const s = score(R,r); if(s>0){ n++; if(s>bs){ bs = s; bi = i; } } });
+    if(bi>=0){ won.set(r, bi); matchCount.set(r, n); } });
+  const lines = rules.map((R,i) => { const rows = buy.filter(r => won.get(r) === i); return {...R, qty: rows.reduce((s,r)=>s+r.qty,0), rows}; });
+  const sum = g => lines.filter(l=>l.grp===g).reduce((s,l)=>s+l.qty,0);
+  const sample = prod.filter(isSample).reduce((s,r)=>s+r.qty,0);
+  const inQty = sum('IN'), subQty = sum('SUB');
+  const prodTotal = prod.reduce((s,r)=>s+r.qty,0);
+  return {lines, inQty, subQty, sample, total: inQty+subQty+sample, prodTotal,
+    unmapped: buy.filter(r=>!matchCount.has(r)), overlaps: buy.filter(r=>matchCount.get(r)>1).map(r => ({...r, chosen: lines[won.get(r)].name}))};
+}
+
+/* ---------- units: MC 1-23 + SAMPLE1 = Unit 1, MC 101-106 + SAMPLE2 = Unit 2 ---------- */
+function unitOfMc(mc){
+  const s = String(mc).trim().toUpperCase();
+  const sm = s.match(/^SAMPLE\s*-?\s*([12])$/); if(sm) return +sm[1];
+  if(!/^\d+$/.test(s)) return null;
+  const n = +s; return n>=1&&n<=23 ? 1 : (n>=101&&n<=106 ? 2 : 0);
+}
+function assignUnitsList(list){
+  const votes = {};
+  list.forEach(r => { const u = unitOfMc(r.mc); if(u){ (votes[r.sourceFile] = votes[r.sourceFile]||{1:0,2:0})[u]++; } });
+  list.forEach(r => { const u = unitOfMc(r.mc);
+    if(u !== null) r.unit = u;
+    else { const v = votes[r.sourceFile]; r.unit = v && v[2] > v[1] ? 2 : 1; } });
+}
+const assignUnits = () => assignUnitsList(STATE.parsed);
+function unitTotal(u){ return STATE.parsed.filter(r => r.unit===u && r.mc && !r.flagged && r.qty!==null).reduce((s,r)=>s+r.qty,0); }
+
+function aggregate(){
+  assignUnits();
+  if(!STATE.unitChosen && !STATE.parsed.some(r=>r.unit===1) && STATE.parsed.some(r=>r.unit===2)) STATE.unit = 2;
+  const parsed = STATE.parsed.filter(r => r.unit === STATE.unit);
+  const multiDate = new Set(STATE.parsed.map(r => r.iso)).size > 1;
+
+  const capMap = {};
+  parsed.forEach(r => { if(r.mc && r.cap !== null && !(r.mc in capMap)) capMap[r.mc] = r.cap; });
+  const prod = parsed.filter(r => r.mc && !r.flagged && r.qty !== null);
+  const flagged = parsed.filter(r => r.flagged && r.qty !== null);
+
+  const rowForTable = r => ({
+    buyer:r.buyer||'—', order:r.order||'—', batch:r.batch||'—', qty:r.qty,
+    rft:r.rft||'—', category:r.category||'—', loadTime:r.loadTime||'—', unloadTime:r.unloadTime||'—',
+    date:r.date||'—', mc:r.mc, color:r.color||'—', fabric:r.fabric||'—', shade:r.shade||'—'
+  });
+
+  const byMc = {};
+  prod.forEach(r => {
+    if(!byMc[r.mc]) byMc[r.mc] = {key:r.mc, batches:0, qty:0, rows:[]};
+    byMc[r.mc].batches++; byMc[r.mc].qty += r.qty; byMc[r.mc].rows.push(rowForTable(r));
+  });
+  const machines = sortSequentially(Object.values(byMc).map(m => {
+    const cap = capMap[m.key] ?? null;
+    return {...m, cap, fillRate: cap ? +(m.qty/(cap*FILL_TARGET)*100).toFixed(1) : null};
+  }), it => it.key, '22');
+
+  const report = buyerReport(parsed);
+  const buyers = report.lines.filter(l => l.qty > 0).map(l => {
+    const rows = l.rows.map(rowForTable);
+    const ok = l.rows.filter(r => r.rft && r.rft.trim().toUpperCase()==='RFT').length;
+    return {key:l.name, display:l.name, grp:l.grp, qty:l.qty, rows, batches:l.rows.length,
+      machineCount:new Set(l.rows.map(r=>r.mc)).size, rftRate:l.rows.length ? +(ok/l.rows.length*100).toFixed(1) : null};
+  });
+
+  const catAgg = {};
+  prod.forEach(r => {
+    if(!r.category) return;
+    const raw = r.category.toUpperCase();
+    const key = WHITE_WASH_GROUP.has(raw) ? 'WHITE/WASH' : raw;
+    if(!catAgg[key]) catAgg[key] = {name:key, count:0, qty:0};
+    catAgg[key].count++; catAgg[key].qty += r.qty;
+  });
+  const categories = Object.values(catAgg).sort((a,b)=>b.qty-a.qty);
+
+  const rftAgg = {};
+  prod.forEach(r => { const key = r.rft ? r.rft.trim() : 'BLANK'; rftAgg[key] = (rftAgg[key]||0) + 1; });
+  const rft = Object.keys(rftAgg).map(k => ({name:k, count:rftAgg[k]})).sort((a,b)=>b.count-a.count);
+  const rftOkCount = rftAgg['RFT'] || 0;
+
+  const openBatch = r => /[()]/.test(r.batch || '');          // bracketed batch number = still running, no category needed
+  const missingCategory = prod.filter(r => !openBatch(r) && !r.category && !/SAMPLE/i.test(r.mc))
+    .map(r => ({id:r.id, MC:r.mc, BUYER:r.buyer||'—', ORDER:r.order||'—', BATCH:r.batch||'—', COLOR:r.color||'—', FABRIC:r.fabric||'—', SHADE:r.shade||'—', QTY:r.qty, DATE:r.date}));
+  const wrongCategory = prod.filter(r => !openBatch(r) && r.category && !KNOWN_CATEGORIES.includes(r.category.toUpperCase()))
+    .map(r => ({id:r.id, MC:r.mc, BUYER:r.buyer||'—', ORDER:r.order||'—', BATCH:r.batch||'—', COLOR:r.color||'—', FABRIC:r.fabric||'—', SHADE:r.shade||'—', QTY:r.qty, CATEGORY:r.category, DATE:r.date}));
+  const nextDay = parsed.filter(r => r.unloadTime && r.unloadTime.toUpperCase().indexOf('NEXT') !== -1)
+    .map(r => ({id:r.id, MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', COLOR:r.color||'—', LOAD:r.loadTime||'—', DATE:r.date}));
+  const longDuration = parsed.filter(r => (parseDurationHours(r.duration)||0) > 18)
+    .map(r => ({MC:r.mc, BUYER:r.buyer||'—', LOAD:r.loadTime||'—', UNLOAD:r.unloadTime||'—', DURATION:r.duration, DATE:r.date}));
+  const flaggedRows = flagged.map(r => ({
+    MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', COLOR:r.color||'—', QTY: r.qty, RFT:r.rft||'—', CATEGORY:r.category||'—', DATE:r.date }));
+
+  return {
+    multiDate,
+    totalQty: prod.reduce((s,r)=>s+r.qty,0), totalBatches: prod.length, machineCount: machines.length,
+    rftRate: prod.length ? +(rftOkCount/prod.length*100).toFixed(1) : 0,
+    flaggedCount: flagged.length, flaggedQty: flagged.reduce((s,r)=>s+r.qty,0),
+    machines, buyers, report, categories, rft,
+    badUnitRows: STATE.parsed.filter(r => r.unit===0).map(r => ({MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', QTY:r.qty??'—', DATE:r.date})),
+    unmappedRows: report.unmapped.map(r => ({MC:r.mc, BUYER:r.buyer||'—', ORDER:r.order||'—', BATCH:r.batch||'—', COLOR:r.color||'—', QTY:r.qty, DATE:r.date})),
+    overlapRows: report.overlaps.map(r => ({MC:r.mc, BUYER:r.buyer, BATCH:r.batch||'—', CHOSEN:r.chosen, QTY:r.qty, DATE:r.date})),
+    flaggedRows, missingCategory, wrongCategory, nextDay, longDuration
+  };
+}
+
+/* called from an inline "needs a look" field once a value is corrected */
+function commitEdit(id, field, value){
+  const row = STATE.parsed.find(r => r.id === id) || (STATE.main && STATE.main.days.flatMap(d => d.entries).find(r => r.id === id));
+  if(!row) return;
+  row[field] = value.trim();
+  render(aggregate());
+}
+function removeSource(fileName){
+  STATE.parsed = STATE.parsed.filter(r => r.sourceFile !== fileName);
+  STATE.sources = STATE.sources.filter(s => s.fileName !== fileName);
+  if(STATE.sources.length === 0){
+    dashboard.style.display = 'none'; headActions.style.display = 'none'; sourcesStrip.style.display = 'none';
+    if(STATE.main) showDayPicker(); else uploadScreen.style.display = 'block';
+    return;
+  }
+  const isos = loadedIsos(); if(!isos.includes(STATE.reportIso)) STATE.reportIso = isos[isos.length-1] || '';
+  render(aggregate());
+}
+
+/* ---------- Main production file: choose the day ---------- */
+function dayTotals(day, u){ const s = summarize(day.entries.filter(r => r.unit === u), u); return s.B; }
+function showDayPicker(){
+  const M = STATE.main;
+  uploadScreen.style.display = 'none'; dashboard.style.display = 'none'; headActions.style.display = 'flex'; dayPicker.style.display = 'block';
+  sourcesStrip.style.display = 'none';
+  const first = M.days[0].label, last = M.days[M.days.length-1].label;
+  $('dayPickNote').textContent = M.fileName + ' · ' + M.days.length + ' days, ' + first + ' to ' + last +
+    (M.fixes ? ' · ' + M.fixes + ' mistyped dates were matched to their day' : '');
+  const g = $('dayGrid'); g.innerHTML = '';
+  const months = [...new Set(M.days.map(d => d.iso.slice(0,7)))];
+  months.forEach(ym => {
+    const [y,m] = ym.split('-').map(Number);
+    const h = document.createElement('div'); h.className = 'daygrid-month'; h.textContent = MONTHS[m-1] + ' ' + y; g.appendChild(h);
+    const grid = document.createElement('div'); grid.className = 'daygrid-cells';
+    M.days.filter(d => d.iso.startsWith(ym)).forEach(d => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'daycell';
+      const t1 = dayTotals(d,1), t2 = dayTotals(d,2);
+      b.innerHTML = `<span class="dc-d">${+d.iso.slice(8)}<small>${weekdayOf(d.iso)}</small></span>
+        <span class="dc-u"><i>U1</i>${t1 ? fmt(t1) : '—'}</span><span class="dc-u"><i>U2</i>${t2 ? fmt(t2) : '—'}</span>`;
+      b.addEventListener('click', () => loadMainDay(d.iso));
+      grid.appendChild(b);
+    });
+    g.appendChild(grid);
+  });
+  const warn = $('dayWarn');
+  warn.textContent = M.skipped.length ? 'Skipped (no readable date): ' + M.skipped.join(', ') : '';
+}
+function loadMainDay(iso){
+  const M = STATE.main, d = M.dayMap[iso]; if(!d) return;
+  STATE.parsed = STATE.parsed.filter(r => !r.sourceFile.startsWith(M.fileName + ' · '));
+  STATE.sources = STATE.sources.filter(s => !s.main);
+  STATE.parsed.push(...d.entries);
+  STATE.sources.push({fileName:d.srcName, sheetName:'Sheet1', date:d.label, iso:d.iso, count:d.entries.length, main:true});
+  STATE.reportIso = iso;
+  afterLoad();
+}
+
+/* ---------- rendering ---------- */
+const fmt = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : Math.round(n).toLocaleString('en-US');
+const fmt1 = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : n.toFixed(1);
+
+const VIEWS = ['machine','buyer','category','final','flags','history','entry'];
+VIEWS.forEach(v => document.getElementById('tab_'+v).addEventListener('click', () => switchView(v)));
+function switchView(view){
+  currentView = view;
+  VIEWS.forEach(v => {
+    document.getElementById('tab_'+v).classList.toggle('active', v===view);
+    document.getElementById('pane_'+v).style.display = v===view ? 'block' : 'none';
+  });
+}
+
+function renderSources(){
+  sourcesStrip.innerHTML = '';
+  if(STATE.sources.length === 0){ sourcesStrip.style.display = 'none'; return; }
+  sourcesStrip.style.display = 'flex';
+  STATE.sources.forEach(s => {
+    const chip = document.createElement('div');
+    chip.className = 'src-chip';
+    chip.innerHTML = `<span class="src-date">${s.date || '—'}</span><span class="src-file">${s.fileName}</span><span class="n">${s.count} rows</span>`;
+    const btn = document.createElement('button');
+    btn.textContent = '×';
+    btn.title = 'Remove this file';
+    btn.addEventListener('click', () => removeSource(s.fileName));
+    chip.appendChild(btn);
+    sourcesStrip.appendChild(chip);
+  });
+  const addChip = document.createElement('div');
+  addChip.className = 'src-chip add';
+  addChip.textContent = '+ add file';
+  addChip.addEventListener('click', () => addFilesBtn.click());
+  sourcesStrip.appendChild(addChip);
+}
+
+function renderCards(container, groups, opts){
+  container.innerHTML = '';
+  if(groups.length === 0){ container.innerHTML = '<div class="empty">' + opts.emptyMsg + '</div>'; return; }
+  const secs = new Map();
+  groups.forEach(g => { const s = opts.section ? opts.section(g) : {key:'',label:''};
+    if(!secs.has(s.key)) secs.set(s.key, {label:s.label, items:[]}); secs.get(s.key).items.push(g); });
+  const cards = [], panels = [];
+  secs.forEach(sec => {
+    if(sec.label){ const h = document.createElement('div'); h.className = 'card-sec ' + String(sec.key).toLowerCase(); h.innerHTML = sec.label; container.appendChild(h); }
+    const grid = document.createElement('div'); grid.className = 'card-grid';
+    const panel = document.createElement('div'); panel.className = 'card-panel'; panel.style.display = 'none';
+    sec.items.forEach(g => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'card ' + (opts.cardClass ? opts.cardClass(g) : '');
+      b.innerHTML = opts.cardHtml(g);
+      b.addEventListener('click', () => {
+        const wasOpen = b.classList.contains('sel');
+        cards.forEach(x => x.classList.remove('sel')); panels.forEach(x => x.style.display = 'none');
+        if(wasOpen) return;
+        b.classList.add('sel'); panel.innerHTML = detailHtml(g, opts); panel.style.display = 'block';
+        panel.scrollIntoView({block:'nearest', behavior:'smooth'});
+      });
+      cards.push(b); grid.appendChild(b);
+    });
+    container.appendChild(grid); container.appendChild(panel); panels.push(panel);
+  });
+}
+
+function detailHtml(g, opts){
+  const dt = opts.showDate;
+  const head = `<tr>${opts.showMc?'<th class="mono">MC</th>':''}<th>Buyer</th><th>Order</th><th class="mono">Batch</th><th>Color</th><th>Fabric</th>
+      <th class="mono">Qty (kg)</th><th>Status</th><th>Category</th><th>Shade</th><th class="mono">Load</th><th class="mono">Unload</th>${dt?'<th class="mono">Date</th>':''}</tr>`;
+  const body = g.rows.map(r => `<tr>${opts.showMc?`<td class="mono">${r.mc}</td>`:''}
+      <td>${r.buyer}</td><td>${r.order}</td><td class="mono">${r.batch}</td><td>${r.color}</td><td>${r.fabric}</td>
+      <td class="mono">${fmt(r.qty)}</td><td>${rftDisplay(r.rft)}</td><td>${r.category}</td><td>${r.shade}</td>
+      <td class="mono">${r.loadTime}</td><td class="mono">${r.unloadTime}</td>${dt?`<td class="mono">${r.date}</td>`:''}</tr>`).join('');
+  return `<h3>${opts.title(g)}<span>${fmt(g.qty)} kg · ${g.rows.length} batch${g.rows.length>1?'es':''}</span></h3><table class="btab">${head}${body}</table>`;
+}
+
+function rftDisplay(code){
+  if(!code || code==='—') return '—';
+  const label = RFT_LABELS[code.trim().toUpperCase()];
+  return label ? `${code} <span style="color:var(--ink-dim)">(${label})</span>` : code;
+}
+
+function render(d){
+  document.getElementById('kpiQty').innerHTML = fmt(d.totalQty) + ' <small>kg</small>';
+  document.getElementById('kpiBatches').textContent = d.totalBatches;
+  document.getElementById('kpiMachines').textContent = d.machineCount;
+  document.getElementById('kpiRft').innerHTML = fmt1(d.rftRate) + '<small>%</small>';
+  document.getElementById('kpiFlag').innerHTML = d.flaggedCount + ' <small>/ ' + fmt(d.flaggedQty) + ' kg</small>';
+
+  renderSources();
+  const ut = document.getElementById('unitTabs');
+  ut.innerHTML = [1,2].map(u => `<button class="view-tab unit-tab ${STATE.unit===u?'active':''}" data-u="${u}">UNIT ${u} <small>${u===1?'MC 1–23':'MC 101–106'} · ${fmt(unitTotal(u))} kg</small></button>`).join('');
+  ut.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { STATE.unit = +b.dataset.u; STATE.unitChosen = true; STATE.asked = ''; render(aggregate()); }));
+
+  // ---- machine view (cards) ----
+  const chips = (names, n=2) => { const u = [...new Set(names.filter(x => x && x!=='—'))];
+    return u.slice(0,n).map(x => `<span class="chip">${x}</span>`).join('') + (u.length>n ? `<span>+${u.length-n}</span>` : ''); };
+  renderCards(machineList, d.machines, {
+    pinned: m => m.key.trim()==='22', cardClass: m => m.key.trim()==='22' ? 'pinned' : '',
+    showMc: false, showDate: d.multiDate, title: m => 'MC ' + m.key,
+    emptyMsg: 'No production rows recognized across the loaded file(s).',
+    cardHtml: m => `<div class="c-top"><span class="c-name">MC ${m.key}</span><span class="c-sub">${m.cap!==null ? fmt(m.cap)+' kg cap' : 'no cap'}</span></div>
+      <div class="c-qty">${fmt(m.qty)}<small>kg</small></div>
+      <div class="c-foot"><span>${m.batches} batch${m.batches>1?'es':''}</span>${chips(m.rows.map(r=>r.buyer))}</div>`
+  });
+
+  // ---- buyer view (cards, grouped IN HOUSE / SUB CONTRACT) ----
+  renderCards(buyerList, d.buyers, {
+    showMc: true, showDate: d.multiDate, title: b => b.display,
+    emptyMsg: 'No buyer names recognized across the loaded file(s).',
+    cardClass: b => b.grp==='IN' ? 'in' : 'sub',
+    section: b => b.grp==='IN' ? {key:'IN', label:`<b>IN HOUSE</b><span>${fmt(d.report.inQty)} kg</span>`} : {key:'SUB', label:`<b>SUB CONTRACT</b><span>${fmt(d.report.subQty)} kg</span>`},
+    cardHtml: b => `<div class="c-top"><span class="c-name">${b.display}</span><span class="tag ${b.grp==='IN'?'':'sub'}">${b.grp==='IN'?'IN':'SUB'}</span></div>
+      <div class="c-qty">${fmt(b.qty)}<small>kg</small></div>
+      <div class="c-foot"><span>${b.batches} batch${b.batches>1?'es':''} · ${b.machineCount} mc</span>${b.rftRate!==null?`<span class="chip">${fmt1(b.rftRate)}% RFT</span>`:''}</div>`
+  });
+  const rp = d.report, bs = document.getElementById('buyerSummary');
+  const chk = rp.total === rp.prodTotal;
+  bs.innerHTML = '<div class="bsum">' + [['IN HOUSE',rp.inQty,'#5FA8A0'],['SUB CONTRACT',rp.subQty,'#E0A339'],['SAMPLE',rp.sample,'#9FB0B4'],['TOTAL PRODUCTION',rp.total,'#E8E0D1']]
+    .map(([n,v,col]) => `<div class="bbox" style="border-top-color:${col}"><div class="bn">${n}</div><div class="bv">${fmt(v)}<small> kg</small></div></div>`).join('') + '</div>' +
+    `<div class="pill"><span class="dot" style="background:${chk?'#5FA8A0':'#C96A4E'}"></span>${chk ? 'OK — matches production total' : 'WRONG — buyer total '+fmt(rp.total)+' vs production '+fmt(rp.prodTotal)}</div>`;
+  // ---- ask about buyers the rules don't recognise ----
+  const ab = document.getElementById('assignBox');
+  const un = new Map();
+  rp.unmapped.filter(r => r.buyer && r.buyer.trim()).forEach(r => { const k = r.buyer.trim().toUpperCase(); const o = un.get(k) || {q:0, rows:[]}; o.q += r.qty; o.rows.push(r); un.set(k, o); });
+  if(un.size){
+    const opts = '<option value="">— choose —</option><option value="IN">Add as new IN HOUSE buyer</option><option value="SUB">Add as new SUB CONTRACT buyer</option>' +
+      '<optgroup label="Same buyer as…">' + RULES.map(x => `<option value="MERGE:${x.name}">${x.name}</option>`).join('') + '</optgroup>';
+    ab.innerHTML = `<div class="assign"><h3>${un.size} buyer${un.size>1?'s':''} not recognised — where should ${un.size>1?'they':'it'} go?</h3>
+      <p>These names match nothing in your CALCULATION list, so their kg is missing from the totals. Your answer is remembered for next time.</p>
+      ${[...un].map(([n,o],i) => `<div class="assign-row"><span>${n}<small class="un-b">${o.rows.map(r => 'Batch ' + esc(r.batch||'—') + ' · MC ' + esc(r.mc) + ' · ' + esc(r.color||'—') + ' · ' + fmt(r.qty) + ' kg').join('<br>')}</small></span><span class="mono">${fmt(o.q)} kg</span><select data-buyer="${n.replace(/"/g,'&quot;')}">${opts}</select></div>`).join('')}
+      <div style="margin-top:12px"><button class="btn small primary" id="assignApply">Apply</button></div></div>`;
+    document.getElementById('assignApply').addEventListener('click', () => {
+      ab.querySelectorAll('select').forEach(s => { if(s.value) STATE.assign[s.dataset.buyer] = s.value; });
+      try { localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); } catch(e){}
+      render(aggregate());
+    });
+    const key = [...un.keys()].join('|');
+    if(STATE.asked !== key){ STATE.asked = key; currentView = 'buyer'; }
+  } else ab.innerHTML = '';
+  switchView(currentView);
+
+  // ---- category split ----
+  const catColors = {COLOR:'#5FA8A0', 'WHITE/WASH':'#C9C2B2', DPD:'#E0A339'};
+  const catTotal = d.categories.reduce((s,c)=>s+c.qty,0) || 1;
+  const catWrap = document.getElementById('catStack');
+  catWrap.innerHTML = '';
+  if(d.categories.length === 0){ catWrap.innerHTML = '<div class="empty">No category data found.</div>'; }
+  d.categories.forEach(c=>{
+    const pct = (c.qty/catTotal*100);
+    const row = document.createElement('div');
+    row.className = 'stack-row';
+    row.innerHTML = `
+      <div class="top"><span class="name">${c.name}</span><span class="val">${fmt(c.qty)} kg · ${c.count} batches</span></div>
+      <div class="stack-track"><div class="stack-fill" style="width:${pct}%;background:${catColors[c.name]||'#7A93A6'}"></div></div>
+    `;
+    catWrap.appendChild(row);
+  });
+
+  // ---- RFT pills + legend ----
+  const rftColors = {RFT:'#5FA8A0', ADD:'#E0A339', BLANK:'#7A93A6', TOP:'#C96A4E', NEXT:'#C96A4E'};
+  const rftWrap = document.getElementById('rftPills');
+  rftWrap.innerHTML = '';
+  const legendParts = [];
+  d.rft.forEach(r=>{
+    const code = r.name.trim();
+    const key = code.toUpperCase();
+    const pill = document.createElement('div');
+    pill.className = 'pill';
+    pill.innerHTML = `<span class="dot" style="background:${rftColors[key]||'#7A93A6'}"></span>${code||'BLANK'} <span class="n">${r.count}</span>`;
+    rftWrap.appendChild(pill);
+    if(RFT_LABELS[key]) legendParts.push(`${code} = ${RFT_LABELS[key]}`);
+  });
+  document.getElementById('rftLegend').textContent = legendParts.length ? legendParts.join(' · ') : '';
+
+  // ---- needs a look ----
+  const groups = document.getElementById('flagGroups');
+  groups.innerHTML = '';
+  const dateCol = d.multiDate ? {key:'DATE', label:'Date', mono:true} : null;
+  const withDate = cols => dateCol ? [...cols, dateCol] : cols;
+
+  addGroup(groups, 'Machine number outside both units',
+    'Unit 1 = MC 1–23, Unit 2 = MC 101–106. These rows belong to neither report until the MC number is fixed in the sheet.',
+    d.badUnitRows, withDate([{key:'MC',label:'MC',mono:true},{key:'BATCH',label:'Batch',mono:true},{key:'BUYER',label:'Buyer'},{key:'QTY',label:'Qty (kg)',mono:true}]));
+  addGroup(groups, 'Buyer not in the CALCULATION list — add a rule or fix the spelling',
+    'These production rows match no buyer keyword, so they are missing from IN HOUSE / SUB CONTRACT (this is the sheet\'s "WRONG" case).',
+    d.unmappedRows, withDate([{key:'MC',label:'MC',mono:true},{key:'BATCH',label:'Batch',mono:true},{key:'BUYER',label:'Buyer'},{key:'ORDER',label:'Order'},{key:'COLOR',label:'Colour',colour:true},{key:'QTY',label:'Qty (kg)',mono:true}]));
+  addGroup(groups, 'Buyer name fits two buyers — counted once, please check',
+    'The buyer name on these batches contains two buyer names (for example ZXY and ZXY GILDEN). Each batch is counted only once, under the longest matching name shown in "Counted under". Nothing is double counted.',
+    d.overlapRows, withDate([{key:'MC',label:'MC',mono:true},{key:'BATCH',label:'Batch',mono:true},{key:'BUYER',label:'Buyer on the sheet'},{key:'CHOSEN',label:'Counted under'},{key:'QTY',label:'Qty (kg)',mono:true}]));
+  addGroup(groups,
+    'Bracketed quantities — not counted in totals',
+    `The QTY cell still has "(" or ")" around the number. That's the sheet's own marker for a batch not yet finished, so it's held out of the ${fmt(d.totalQty)} kg total above.`,
+    d.flaggedRows,
+    withDate([{key:'MC',label:'MC',mono:true},{key:'BUYER',label:'Buyer'},{key:'BATCH',label:'Batch',mono:true},{key:'COLOR',label:'Colour',colour:true},{key:'QTY',label:'Qty (kg)',mono:true},{key:'RFT',label:'Status'},{key:'CATEGORY',label:'Category'}])
+  );
+  addGroup(groups,
+    'Missing category — fill it in',
+    `These rows have a quantity but no category. Look at the Colour column (the dye colour name) to identify the batch, then type its Category (Color / White / DPD / Scouring / Wash) and the totals above update right away.`,
+    d.missingCategory,
+    withDate([{key:'MC',label:'MC',mono:true},{key:'BUYER',label:'Buyer'},{key:'ORDER',label:'Order'},{key:'BATCH',label:'Batch',mono:true},{key:'COLOR',label:'Colour',colour:true},{key:'FABRIC',label:'Fabric'},{key:'SHADE',label:'Shade'},{key:'QTY',label:'Qty (kg)',mono:true}]),
+    {field:'category', label:'Category (not colour)', placeholder:'Category: Color / White / DPD / Scouring / Wash'}
+  );
+  addGroup(groups,
+    "Category doesn't match the known list — check it",
+    `Recognized categories are Color, White, DPD, Scouring, Wash, RFD. These rows have something else — could be a typo or a genuinely new category. Correct it here if it's wrong.`,
+    d.wrongCategory,
+    withDate([{key:'MC',label:'MC',mono:true},{key:'BUYER',label:'Buyer'},{key:'ORDER',label:'Order'},{key:'BATCH',label:'Batch',mono:true},{key:'COLOR',label:'Colour',colour:true},{key:'FABRIC',label:'Fabric'},{key:'SHADE',label:'Shade'},{key:'QTY',label:'Qty (kg)',mono:true}]),
+    {field:'category', label:'Category (not colour)', placeholder:'Category: Color / White / DPD / Scouring / Wash'}
+  );
+  addGroup(groups,
+    'Unload time missing — fill it in',
+    `Marked "NEXT DAY" with no actual time, so duration couldn't be calculated. Enter the real unload time (e.g. 06:40) if you have it.`,
+    d.nextDay,
+    withDate([{key:'MC',label:'MC',mono:true},{key:'BUYER',label:'Buyer'},{key:'BATCH',label:'Batch',mono:true},{key:'COLOR',label:'Colour',colour:true},{key:'LOAD',label:'Load time',mono:true}]),
+    {field:'unloadTime', label:'Unload time', placeholder:'e.g. 06:40:00'}
+  );
+  addGroup(groups,
+    'Unusually long duration (18h+)',
+    `Load-to-unload span is long enough that it's worth confirming the times were entered correctly.`,
+    d.longDuration,
+    withDate([{key:'MC',label:'MC',mono:true},{key:'BUYER',label:'Buyer'},{key:'LOAD',label:'Load',mono:true},{key:'UNLOAD',label:'Unload',mono:true},{key:'DURATION',label:'Duration',mono:true}])
+  );
+  if(groups.children.length === 0){
+    groups.innerHTML = '<div class="empty">Nothing flagged — every row parsed cleanly.</div>';
+  }
+
+  const nFlags = d.unmappedRows.length+d.overlapRows.length+d.flaggedRows.length+d.missingCategory.length+d.wrongCategory.length+d.nextDay.length+d.longDuration.length+d.badUnitRows.length;
+  document.getElementById('flagBadge').textContent = nFlags ? '('+nFlags+')' : '';
+
+  // ---- footer ----
+  const srcList = STATE.sources.map(s => `${s.fileName}${s.date ? ' ('+s.date+')' : ''}`).join(', ');
+  document.getElementById('footNote').innerHTML =
+    `Read from ${STATE.sources.length} file${STATE.sources.length>1?'s':''}: <span class="mono">${srcList}</span>. ` +
+    `"Confirmed produced" excludes rows where the QTY cell was still bracketed <span class="mono">( )</span> ` +
+    `— those aren't finished batches yet, so they're carried in the review list instead of the totals above.`;
+  renderDayBar(); renderFinal(); renderHistory(); renderEntry(); updateActions();
+}
+
+/* editCol, when given, replaces that column with a live input the user can
+   type an answer into — committing it re-runs the whole read-out */
+function addGroup(container, title, why, rows, cols, editCol){
+  if(!rows || rows.length===0) return;
+  const det = document.createElement('details');
+  det.className = 'flag-group';
+  det.open = true;
+  const summary = document.createElement('summary');
+  summary.innerHTML = `<span>${title}</span><span class="count">${rows.length}</span>`;
+  det.appendChild(summary);
+  const body = document.createElement('div');
+  body.className = 'flag-body';
+  const whyP = document.createElement('p');
+  whyP.className = 'flag-why';
+  whyP.textContent = why;
+  body.appendChild(whyP);
+  const table = document.createElement('table');
+  table.className = 'ftab';
+  const thead = document.createElement('tr');
+  cols.forEach(c=>{
+    const th = document.createElement('th');
+    th.className = c.mono ? 'mono' : '';
+    th.textContent = c.label;
+    thead.appendChild(th);
+  });
+  if(editCol){
+    const th = document.createElement('th');
+    th.textContent = editCol.label;
+    thead.appendChild(th);
+  }
+  table.appendChild(thead);
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    cols.forEach(c=>{
+      const td = document.createElement('td');
+      td.className = (c.mono ? 'mono ' : '') + (c.colour ? 'colour-cell' : '');
+      let val = r[c.key];
+      if(typeof val === 'number') val = fmt(val);
+      td.textContent = (val===undefined||val===null||val==='') ? '—' : val;
+      tr.appendChild(td);
+    });
+    if(editCol){
+      const td = document.createElement('td');
+      const input = document.createElement('input');
+      input.className = 'edit-input';
+      input.type = 'text';
+      input.placeholder = editCol.placeholder || '';
+      if(editCol.field === 'category' && r.CATEGORY && r.CATEGORY !== '—') input.value = r.CATEGORY;
+      const commit = () => {
+        if(input.value.trim() !== '') commitEdit(r.id, editCol.field, input.value);
+      };
+      input.addEventListener('change', commit);
+      input.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); input.blur(); } });
+      td.appendChild(input);
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  });
+  body.appendChild(table);
+  det.appendChild(body);
+  container.appendChild(det);
+}
+
+/* ============================================================
+   REPORT FIGURES — the same rules as the CATEGORY and BATCHMC tabs
+   ============================================================ */
+const MC_CAP = {22:1500,1:1500,2:1500,3:1200,4:1200,5:1000,6:1000,7:1000,8:750,9:750,10:750,11:500,12:300,13:250,14:250,15:400,16:180,17:500,18:500,19:180,20:100,21:100,23:1000,101:1500,102:900,103:750,104:500,105:400,106:200};
+const UNIT_CFG = {
+  1: {lo:1,   hi:23,  list:[22,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,23], skip:[16,19,20,21], sample:'SAMPLE1'},
+  2: {lo:101, hi:106, list:[101,102,103,104,105,106], skip:[], sample:'SAMPLE2'}
+};
+const TARGET_BATCH = 2.5;
+const WWK = ['WHITE','WASH','SCOURING','RFD'];
+const hasCat = (r, keys) => { const c = (r.category||'').toUpperCase(); return keys.some(k => c.includes(k)); };
+const sumQty = a => a.reduce((s,r) => s + r.qty, 0);
+
+function summarize(rows, u){
+  const cfg = UNIT_CFG[u];
+  const good = rows.filter(r => r.mc && !r.flagged && r.qty !== null);
+  const isSample = r => /SAMPLE/i.test(r.mc);
+  const inRange = r => /^\d+$/.test(String(r.mc).trim()) && +r.mc >= cfg.lo && +r.mc <= cfg.hi;
+  const mcRows = good.filter(r => !isSample(r) && inRange(r));
+  const J = sumQty(good.filter(isSample));
+  const C = sumQty(mcRows.filter(r => hasCat(r,['COLOR'])));
+  const D = sumQty(mcRows.filter(r => hasCat(r,['DPD'])));
+  const F = sumQty(mcRows.filter(r => hasCat(r,WWK)));
+  const B = sumQty(mcRows) + J;
+  // REPROCESS = R/M batches of this unit, bracketed (unfinished) quantities included
+  const Hauto = rows.filter(r => r.mc && inRange(r) && /^(R\/M|R\.M|RM)$/i.test((r.rft||'').trim())).reduce((s,r) => s + (r.qty||0), 0);
+  const machines = cfg.list.map(mc => {
+    const rr = mcRows.filter(r => String(r.mc).trim() === String(mc));
+    const capRow = rows.find(r => String(r.mc).trim() === String(mc) && r.cap);
+    const color = rr.filter(r => hasCat(r,['COLOR'])).length, dpd = rr.filter(r => hasCat(r,['DPD'])).length, ww = rr.filter(r => hasCat(r,WWK)).length;
+    return {mc, cap: capRow ? capRow.cap : (MC_CAP[mc] || 0), color, dpd, ww, total: color+dpd+ww, qty: sumQty(rr)};
+  });
+  const tot = machines.reduce((t,m) => ({c:t.c+m.color, d:t.d+m.dpd, w:t.w+m.ww, t:t.t+m.total, cap:t.cap+m.cap}), {c:0,d:0,w:0,t:0,cap:0});
+  const other = B - J - sumQty(machines.map(m => ({qty:m.qty})));
+  const denom = good.reduce((s,r) => s + (r.cap||0), 0);
+  return {u, B, C, D, F, J, K: C+D+F+J, ok: C+D+F+J === B, Hauto, hasData: good.length > 0,
+    machines, tot, other, target: TARGET_BATCH * machines.length,
+    avgBatch: machines.length ? tot.t / machines.length : 0, loading: denom ? B / denom * 100 : null, batches: good.length};
+}
+const reportLabel = () => /^\d{4}-/.test(STATE.reportIso) ? labelOf(STATE.reportIso) : ((STATE.sources[0] && STATE.sources[0].date) || 'REPORT');
+const dayRowsOf = (u, iso) => STATE.parsed.filter(r => r.unit === u && r.iso === iso);
+const reportRows = u => dayRowsOf(u, STATE.reportIso);
+const reprocKey = (u, iso) => 'u' + u + '_' + iso;
+const reprocFor = (u, iso, auto) => STATE.reproc[reprocKey(u,iso)] !== undefined ? STATE.reproc[reprocKey(u,iso)] : auto;
+
+function figuresFor(u, k){
+  const mk = (x, src) => ({iso:k, B:x.B, C:x.C, D:x.D, F:x.F, H:x.H, J:x.J, ok: x.C+x.D+x.F+x.J === x.B, src});
+  const live = (rows, src) => { const s = summarize(rows, u); return s.hasData ? mk({B:s.B,C:s.C,D:s.D,F:s.F,J:s.J,H:reprocFor(u,k,s.Hauto)}, src) : null; };
+  if(k === STATE.reportIso){ const r = live(dayRowsOf(u,k), 'today'); if(r) return r; }
+  const h = STATE.hist[reprocKey(u,k)];
+  if(h) return mk(h, 'history');
+  const fc = STATE.fileCat[u][k];
+  if(fc) return mk(fc, 'file');
+  if(STATE.main && STATE.main.dayMap[k]){ const r = live(STATE.main.dayMap[k].entries.filter(e => e.unit === u), 'main'); if(r) return r; }
+  return {iso:k, src:null};
+}
+/* batches of a day that are not in Color / DPD / White-Wash, so they need a category */
+function uncatBatches(u, iso){
+  const dm = STATE.main && STATE.main.dayMap[iso]; if(!dm) return [];
+  const cfg = UNIT_CFG[u], WW = WWK;
+  return dm.entries.filter(e => e.unit === u && e.mc && !e.flagged && !/[()]/.test(e.batch||'') && e.qty !== null && !/SAMPLE/i.test(e.mc) && /^\d+$/.test(String(e.mc).trim()) && +e.mc >= cfg.lo && +e.mc <= cfg.hi
+    && !hasCat(e,['COLOR']) && !hasCat(e,['DPD']) && !hasCat(e,WW))
+    .map(e => 'batch ' + (e.batch||'—') + ' (MC ' + e.mc + ', ' + (e.color||'—') + ', ' + n0(e.qty) + ' kg, category "' + (e.category||'blank') + '")');
+}
+function monthReport(u){
+  const iso = STATE.reportIso;
+  if(!/^\d{4}-\d\d-\d\d$/.test(iso)) return null;
+  const [y,m] = iso.split('-').map(Number), n = daysInMonth(y,m), days = [];
+  for(let d=1; d<=n; d++){ const k = isoOf(y,m,d); days.push(k > iso ? {iso:k, src:null} : figuresFor(u,k)); }
+  const have = days.filter(x => x.src), S = key => have.reduce((s,x) => s + x[key], 0);
+  const tot = {B:S('B'), C:S('C'), D:S('D'), F:S('F'), H:S('H'), J:S('J')};
+  return {u, y, m, n, iso, days, tot, wd: have.length, missing: days.filter(x => !x.src && x.iso < iso).map(x => +x.iso.slice(8)),
+    bad: have.filter(x => !x.ok).map(x => +x.iso.slice(8))};
+}
+const pct = (a,b,dp) => b ? (a/b*100).toFixed(dp) + '%' : '';
+const dmy = iso => (+iso.slice(8)) + '-' + MON3[+iso.slice(5,7)-1] + '-' + iso.slice(2,4);
+const n0 = x => Number(x).toLocaleString('en-US');
+
+/* ============================================================
+   FINAL REPORT PANE (what the superior gets) — shown on screen
+   ============================================================ */
+const SRC_LABEL = {today:'today', history:'saved', file:'from file', main:'main file'};
+function renderFinal(){
+  const el = $('finalPane'); if(!el) return;
+  const u = STATE.unit, mr = monthReport(u);
+  if(!mr){ el.innerHTML = '<div class="empty">The date of this file could not be read, so the month report is not available. Use the main production file or a floor report with a DATE column.</div>'; return; }
+  const sm = summarize(reportRows(u), u);
+  if(!sm.hasData){ el.innerHTML = '<div class="empty">UNIT ' + u + ' has no finished batches on ' + labelOf(STATE.reportIso) + '.</div>'; return; }
+  const key = reprocKey(u, STATE.reportIso);
+  const rows = mr.days.map(x => {
+    const d = +x.iso.slice(8), today = x.iso === STATE.reportIso;
+    if(!x.src) return `<tr class="${x.iso > STATE.reportIso ? 'future' : 'gap'}"><td>${dmy(x.iso)}</td><td colspan="9" class="ct-none">${x.iso > STATE.reportIso ? '' : 'no data'}</td><td></td></tr>`;
+    const h = today ? `<input class="edit-input ct-in" id="reprocInput" type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M). Counted from the sheet, change it if yours differs">` : n0(x.H);
+    return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td><td>${n0(x.B)}</td><td>${n0(x.C)}</td><td>${n0(x.D)}</td><td>${pct(x.D,x.B,1)}</td>
+      <td>${n0(x.F)}</td><td>${pct(x.F,x.B,2)}</td><td>${h}</td><td>${pct(x.H,x.B,2)}</td><td>${n0(x.J)}</td>
+      <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${x.ok?'':' <span class="src bad">check</span>'}</td></tr>`;
+  }).join('');
+  const T = mr.tot, wd = mr.wd || 1, mt = v => (v/1000);
+  const foot = `<tr class="ft"><td>SUM (MT)</td><td>${mt(T.B).toFixed(2)}</td><td>${mt(T.C).toFixed(2)}</td><td>${mt(T.D).toFixed(2)}</td><td></td><td>${mt(T.F).toFixed(2)}</td><td></td><td>${mt(T.H).toFixed(2)}</td><td></td><td>${mt(T.J).toFixed(2)}</td><td></td></tr>
+    <tr class="ft"><td>AVG (MT)</td><td>${(mt(T.B)/wd).toFixed(3)}</td><td>${(mt(T.C)/wd).toFixed(3)}</td><td>${(mt(T.D)/wd).toFixed(3)}</td><td></td><td>${(mt(T.F)/wd).toFixed(3)}</td><td></td><td>${(mt(T.H)/wd).toFixed(3)}</td><td></td><td>${(mt(T.J)/wd).toFixed(3)}</td><td></td></tr>
+    <tr class="ft"><td>PERCENTAGE</td><td>100.00%</td><td>${pct(T.C,T.B,2)}</td><td>${pct(T.D,T.B,2)}</td><td></td><td>${pct(T.F,T.B,2)}</td><td></td><td>${pct(T.H,T.B,2)}</td><td></td><td>${pct(T.J,T.B,2)}</td><td></td></tr>
+    <tr class="ft"><td>WORKING DAYS</td><td>${mr.wd}</td><td colspan="9"></td></tr>`;
+  const notes = [];
+  if(!sm.ok) notes.push(`<div class="note bad">Category check is WRONG for ${labelOf(STATE.reportIso)}: color + DPD + white/wash + sample = ${n0(sm.K)} kg but production is ${n0(sm.B)} kg (${n0(sm.B-sm.K)} kg not in a category). Fix it in <b>Needs a look</b>.</div>`);
+  else notes.push(`<div class="note ok">Category check is OK for ${labelOf(STATE.reportIso)}.</div>`);
+  const others = mr.bad.filter(d => d !== +STATE.reportIso.slice(8));
+  if(!sm.ok){ const L0 = uncatBatches(u, STATE.reportIso); if(L0.length) notes.push(`<div class="note bad">Batches that need a category today: ${L0.join('; ')}</div>`); }
+  if(others.length) notes.push(`<div class="note bad">Category check is WRONG on day ${others.join(', ')} of the month (those figures come from ${'the main file or saved history'}). Select that day in "Report day" and fix it in Needs a look.</div>`);
+  const todo = others.map(d => { const L = uncatBatches(u, isoOf(mr.y, mr.m, d)); return L.length ? `<b>Day ${d}</b>: ` + L.join('; ') : ''; }).filter(Boolean);
+  if(todo.length) notes.push(`<div class="note bad">Batches that need a category:<br>${todo.join('<br>')}</div>`);
+  if(mr.missing.length) notes.push(`<div class="note">No data for day ${mr.missing.join(', ')}. Load the main production file to fill them in.</div>`);
+
+  const mrows = sm.machines.map(m => `<tr><td>${m.mc}</td><td>${n0(m.cap)}</td><td>${m.color}</td><td>${m.dpd}</td><td>${m.ww}</td><td>${m.total}</td><td>${n0(m.qty)}</td><td>${TARGET_BATCH}</td></tr>`).join('');
+  const cfg = UNIT_CFG[u];
+  const extra = `<tr class="muted"><td>SAMPLE</td><td colspan="5"></td><td>${n0(sm.J)}</td><td></td></tr>` +
+    (cfg.skip.length ? `<tr class="muted"><td>OTHER MC</td><td colspan="5">MC ${cfg.skip.join(', ')}</td><td>${n0(sm.other)}</td><td></td></tr>` : '');
+  el.innerHTML = `
+    <div class="fin-head"><div><h3>CATEGORY-WISE PRODUCTION REPORT <span>${MONTHS[mr.m-1]} - ${mr.y}</span></h3><div class="sec-note">UNIT ${u} · up to ${labelOf(STATE.reportIso)} · each earlier day uses saved history first, then your uploaded actual file, then the main file</div></div></div>
+    ${notes.join('')}
+    <div class="tscroll"><table class="cat-table"><thead><tr><th>DATE</th><th>PRODUCTION QTY</th><th>COLOR</th><th>DPD</th><th>DPD (%)</th><th>WHITE / WASH</th><th>WHITE / WASH (%)</th><th>REPROCESS</th><th>R/M (%)</th><th>SAMPLE</th><th></th></tr></thead><tbody>${rows}${foot}</tbody></table></div>
+    <div class="fin-head" style="margin-top:30px"><div><h3>MACHINE WISE PRODUCTION REPORT <span>${labelOf(STATE.reportIso)}</span></h3><div class="sec-note">UNIT ${u} · target ${TARGET_BATCH} batches per machine · batches are counted only when the quantity is finished</div></div></div>
+    <div class="tscroll"><table class="cat-table mc"><thead><tr><th>MACHINE</th><th>CAPACITY</th><th>COLOR</th><th>DPD</th><th>WHITE/WASH</th><th>TOTAL BATCH</th><th>QTY</th><th>TARGET BATCH</th></tr></thead><tbody>${mrows}${extra}
+      <tr class="ft"><td>${n0(sm.tot.cap)}</td><td></td><td>${sm.tot.c}</td><td>${sm.tot.d}</td><td>${sm.tot.w}</td><td>${sm.tot.t}</td><td>${n0(sm.B)}</td><td>${sm.target}</td></tr></tbody></table></div>
+    <div class="pill-row" style="margin-top:14px"><div class="pill">TOTAL PRODUCTION <span class="n">${n0(sm.B)} kg</span></div>
+      <div class="pill">AVG BATCH PER MC <span class="n">${sm.avgBatch.toFixed(2)}</span></div>
+      <div class="pill">LOADING <span class="n">${sm.loading === null ? '—' : sm.loading.toFixed(1) + ' %'}</span></div></div>`;
+  const inp = $('reprocInput');
+  if(inp){
+    inp.addEventListener('change', () => {
+      const v = inp.value.trim();
+      if(v === '' || isNaN(+v)) delete STATE.reproc[key]; else STATE.reproc[key] = Math.max(0, Math.round(+v));
+      renderFinal();
+    });
+  }
+}
+
+/* ============================================================
+   DAY BAR + ACTION BAR
+   ============================================================ */
+function renderDayBar(){
+  const sel = $('daySel'), bar = $('dayBarWrap'); if(!sel) return;
+  let opts = [];
+  const seen = new Set();
+  if(STATE.main) STATE.main.days.forEach(d => { seen.add(d.iso); opts.push({v:d.iso, t:d.label + ' · ' + weekdayOf(d.iso)}); });
+  loadedIsos().forEach(i => { if(!seen.has(i)){ seen.add(i); opts.push({v:i, t: /^\d{4}-/.test(i) ? labelOf(i) + ' · ' + weekdayOf(i) : i}); } });
+  opts.sort((a,b) => a.v < b.v ? -1 : 1);
+  bar.style.display = opts.length ? 'flex' : 'none';
+  sel.innerHTML = opts.map(o => `<option value="${esc(o.v)}"${o.v === STATE.reportIso ? ' selected' : ''}>${esc(o.t)}</option>`).join('');
+  sel.onchange = () => { if(STATE.main && STATE.main.dayMap[sel.value]) loadMainDay(sel.value); else { STATE.reportIso = sel.value; render(aggregate()); } };
+  $('pickDayBtn').style.display = STATE.main ? '' : 'none';
+}
+$('pickDayBtn').addEventListener('click', () => { if(STATE.main) showDayPicker(); });
+function updateActions(){
+  const u = STATE.unit, lbl = reportLabel();
+  $('actTitle').innerHTML = `Final reports · <b>UNIT ${u}</b> · ${esc(lbl)}`;
+  const has = [1,2].filter(x => summarize(reportRows(x), x).hasData);
+  $('bothBtn').disabled = !has.length;
+  $('saveDayBtn').disabled = !CAP.db || !has.length || !/^\d{4}-/.test(STATE.reportIso);
+  $('gBtn').style.display = CAP.db ? 'none' : '';
+  $('gSetBtn').style.display = CAP.db ? 'none' : '';
+  $('gBtn').disabled = !STATE.main || !has.length;
+  $('syncBtn').style.display = CAP.db ? '' : 'none';
+  $('syncBtn').disabled = !CAP.db || !STATE.main || !has.length;
+  $('syncBtn').title = CAP.db ? 'Save every day of this main file to the online log, so others can open the earlier days' : 'The online log works on the published link.';
+  $('saveDayBtn').title = CAP.db ? 'Save this day, both units, to the online history' : 'History is kept on the hosted page. Open the published link to use it.';
+  [ 'actualBtn','exportBtn','pngBtn','pngMcBtn' ].forEach(id => $(id).disabled = !summarize(reportRows(u), u).hasData);
+}
+
+/* ============================================================
+   EXPORT SUPPORT
+   ============================================================ */
+const UNIT_RANGE = {1:'1–23', 2:'101–106'};
+const LIGHT = 'DDEBF7', HEADC = '1F3A4D';
+const dateLabel = reportLabel;
+const fileDate = () => { const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(STATE.reportIso); return m ? m[3] + ' ' + MON3[+m[2]-1].toUpperCase() : reportLabel().replace(/[^0-9A-Za-z]+/g,'-'); };
+function unitRows(u){
+  return reportRows(u).filter(r => r.mc && ((!r.flagged && r.qty!==null) || /^MC WASH$/i.test(r.buyer)))
+    .map((r,i) => ({r, i, n:parseInt(r.mc,10)})).sort((a,b) => (isNaN(a.n)-isNaN(b.n)) || (a.n-b.n) || (a.i-b.i)).map(x => x.r);
+}
+/* every row of the day for this unit, MC 22 first, samples last — what the actual file's Sheet1 holds */
+function actualRows(u){
+  const key = r => { const n = parseInt(r.mc,10); return /^\d+$/.test(String(r.mc).trim()) ? (n===22 ? 0 : n) : 100000; };
+  return reportRows(u).map((r,i) => ({r,i})).sort((a,b) => key(a.r)-key(b.r) || a.i-b.i).map(x => x.r);
+}
+async function exportGuard(u, silent){
+  aggregate();
+  const rows = unitRows(u);
+  const bad = rows.filter(r => { const x = unitOfMc(r.mc); return x!==null && x!==u; });
+  if(bad.length){
+    await askModal({title:'Export stopped', body:'<p>'+bad.length+' row(s) have an MC number outside UNIT '+u+' (MC '+UNIT_RANGE[u]+'):</p><ul>'+bad.slice(0,10).map(r => '<li>MC '+esc(r.mc)+' · '+esc(r.buyer||'—')+' · '+esc(r.qty??'')+'</li>').join('')+'</ul>', ok:null, cancel:'Close'});
+    return false;
+  }
+  if(silent) return true;
+  const mcs = [...new Set(rows.filter(r => unitOfMc(r.mc)).map(r => +r.mc))].sort((a,b) => a-b);
+  const sm = summarize(reportRows(u), u);
+  return askModal({title:'Export UNIT '+u+' · '+reportLabel(),
+    body:`<p>Machines found: <b>${mcs.join(', ')||'none'}</b></p><p>Rows: ${rows.length} · Production: <b>${n0(sm.B)} kg</b></p>` +
+      (sm.ok ? '<p class="m-ok">Category check OK.</p>' : `<p class="m-bad">Category check is WRONG: ${n0(sm.B-sm.K)} kg is not in any category. You can still export, but fix it first in <b>Needs a look</b> if the numbers go to your superior.</p>`),
+    ok:'Export'});
+}
+let busy = false;
+async function runExport(builder){
+  if(busy) return;
+  const u = STATE.unit;
+  if(!(await exportGuard(u))) return;
+  busy = true;
+  try{ const f = await builder(u); await saveFile(f.name, f.blob); }
+  catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
+  finally{ busy = false; }
+}
+const aoaBlob = wb => new Blob([XLSX.write(wb, {bookType:'xlsx', type:'array'})], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+const cellStyle = (fill,o={}) => {
+  const st = {font:{name:o.font||'Calibri',sz:o.sz||11,bold:!!o.b,underline:!!o.u,color:{rgb:o.c||'000000'}},
+    alignment:{horizontal:o.h||'center',vertical:'center',wrapText:!!o.wrap}};
+  if(fill) st.fill = {patternType:'solid',fgColor:{rgb:fill}};
+  if(!o.nob){ const e = {style:'thin',color:{rgb:'000000'}}; st.border = {top:e,bottom:e,left:e,right:e}; }
+  return st;
+};
+const NOCACHE = () => !!window.__NOCACHE;     // test switch: leave cached values out so Excel/LibreOffice must calculate
+
+/* ---------- FINAL file (FINAL PRODUCTION REPORT: Sheet1 / CALCULATION / DONT DELETE) ---------- */
+function buildFinalXlsx(u){
+  const rp = buyerReport(STATE.parsed.filter(r => r.unit===u && r.iso===STATE.reportIso)), LAST = 2000, rows = unitRows(u);
+  const sty = (fill,o={}) => ({font:{name:'Arial',sz:o.sz||10,bold:!!o.b,color:{rgb:o.c||'000000'}}, fill:{patternType:'solid',fgColor:{rgb:fill}},
+    alignment:{horizontal:o.h||'left',vertical:'center'}, border:{bottom:{style:'thin',color:{rgb:'D0D7DB'}}}});
+  const H = ['DATE','M/C','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','CATEGORY','SHADE'];
+  const body = rows.map(r => /SAMPLE/i.test(r.mc) ? ['',r.mc,'','','','','','',r.qty,'',''] :
+    [r.date,isNaN(+r.mc)?r.mc:+r.mc,r.cap??'',r.buyer,r.order,isNaN(+r.batch)||r.batch===''?r.batch:+r.batch,r.color,r.fabric,r.qty??'',r.category,r.shade]);
+  const ws1 = XLSX.utils.aoa_to_sheet([['FINAL PRODUCTION REPORT - UNIT '+u],H,...body]);
+  ws1['A1'].s = {font:{name:'Arial',sz:12,bold:true}};
+  H.forEach((h,c) => { ws1[XLSX.utils.encode_cell({r:1,c})].s = sty(HEADC,{b:1,c:'FFFFFF',h:'center'}); });
+  body.forEach((row,i) => { const mc = parseInt(row[1],10), fill = isNaN(mc) ? 'EEEEEE' : (mc%2===0 ? LIGHT : 'FFFFFF');
+    row.forEach((v,c) => { const cell = ws1[XLSX.utils.encode_cell({r:i+2,c})] || (ws1[XLSX.utils.encode_cell({r:i+2,c})] = {t:'s',v:''});
+      cell.s = sty(fill,{b:c===1,h:(c===1||c===2||c===8)?'center':'left'}); if(c===8) cell.z = '#,##0'; }); });
+  ws1['!cols'] = H.map((h,c) => ({wch: Math.max(h.length, ...body.map(r => String(r[c]??'').length)) + 1}));
+  const D = `TRIM(Sheet1!$D$3:$D$${LAST})`, I = `Sheet1!$I$3:$I$${LAST}`;
+  const ws2 = {}, put = (a,o) => ws2[a] = o, kind = {};
+  const F = (a,f,v) => put(a, NOCACHE() ? {t:'n', f} : {t:typeof v==='number'?'n':'s', f, v});
+  put('B1',{t:'s',v:'UNIT - '+u}); put('B2',{t:'s',v:'DATE :'}); F('C2','Sheet1!A3',rows[0]?String(rows[0].date):''); put('D2',{t:'s',v:'SUM'});
+  put('B3',{t:'s',v:'BUYER'}); put('C3',{t:'s',v:'QTY'});
+  const line = (r,L,k) => { kind[r] = k; put('B'+r,{t:'s',v:L.name});
+    const q = s => s.replace(/"/g,'""');
+    /* a longer / exact buyer name wins, so its rows are left out of this shorter name */
+    const f = L.exact ? `SUMIF(Sheet1!$D$3:$D$${LAST},"${L.keys[0]}",${I})` : L.keys.map(x=>{
+      const ex = []; rp.lines.forEach(o => o.keys.forEach(k => { const longer = o.exact ? k.toUpperCase().includes(x.toUpperCase()) : (k.length > x.length && k.toUpperCase().includes(x.toUpperCase())); if(longer && !ex.includes(k)) ex.push(k); }));
+      return `SUMPRODUCT(--ISNUMBER(SEARCH("${q(x)}",${D}))${ex.map(k=>`,--ISERROR(SEARCH("${q(k)}",${D}))`).join('')},${I})`; }).join('+');
+    F('C'+r,f,L.qty); };
+  const LIN = rp.lines.filter(l=>l.grp==='IN'&&l.qty>0), LSUB = rp.lines.filter(l=>l.grp==='SUB'&&l.qty>0);
+  const sIn = 4+LIN.length, s0 = sIn+1, sSub = s0+LSUB.length, rS = sSub+1, rT = rS+1, rC = rT+1;
+  LIN.forEach((L,i)=>line(4+i,L,'IN')); LSUB.forEach((L,i)=>line(s0+i,L,'SUB'));
+  kind[sIn]='SIN'; put('B'+sIn,{t:'s',v:'SUM OF IN HOUSE'}); F('C'+sIn,`SUM(C4:C${sIn-1})`,rp.inQty);
+  kind[sSub]='SSUB'; put('B'+sSub,{t:'s',v:'SUM OF SUB CONTRACT'}); F('C'+sSub,`SUM(C${s0}:C${sSub-1})`,rp.subQty);
+  kind[rS]='SMP'; put('B'+rS,{t:'s',v:'SAMPLE'}); F('C'+rS,`SUMPRODUCT(--ISNUMBER(SEARCH("sample",TRIM(Sheet1!$B$3:$B$${LAST}))),${I})`,rp.sample);
+  kind[rT]='TOT'; put('B'+rT,{t:'s',v:'TOTAL SUM'}); F('C'+rT,`C${sSub}+C${sIn}+C${rS}`,rp.total);
+  kind[rC]='CHK'; put('B'+rC,{t:'s',v:'SHEET1 QTY (check)'}); F('C'+rC,`SUM(${I})`,rp.prodTotal);
+  F('D'+rC,`IF(C${rT}=C${rC},"OK","WRONG - check buyer spelling / overlap")`,rp.total===rp.prodTotal?'OK':'WRONG - check buyer spelling / overlap');
+  put('D6',{t:'s',v:'IN'}); F('E6','C'+sIn,rp.inQty); put('D'+s0,{t:'s',v:'SUB'}); F('E'+s0,'C'+sSub,rp.subQty);
+  const KS = {IN:sty('E6F4F1'), SUB:sty('FFF3DC'), SIN:sty('9ED3CB',{b:1}), SSUB:sty('F2CB84',{b:1}), SMP:sty('F1F1F1'), TOT:sty('12232B',{b:1,c:'FFFFFF',sz:11}), CHK:sty('FFFFFF')};
+  Object.entries(kind).forEach(([r,k]) => ['B','C'].forEach(col => { const c = ws2[col+r]; if(c){ c.s = {...KS[k]}; if(col==='C'){ c.s = {...KS[k], alignment:{horizontal:'right'}}; c.z = '#,##0'; } } }));
+  ws2['B1'].s = {font:{name:'Arial',sz:12,bold:true}};
+  ['B3','C3'].forEach(a => ws2[a].s = sty(HEADC,{b:1,c:'FFFFFF',h:'center'}));
+  ws2['D6'].s = sty('1F7A70',{b:1,c:'FFFFFF',h:'center'}); ws2['D'+s0].s = sty('C77D0A',{b:1,c:'FFFFFF',h:'center'});
+  ws2['!ref'] = 'A1:E'+rC; ws2['!cols'] = [{wch:2},{wch:Math.max(...Object.keys(ws2).filter(k=>/^B\d+$/.test(k)).map(k=>String(ws2[k].v).length))+1},{wch:8},{wch:5},{wch:6}];
+  const ws3 = XLSX.utils.aoa_to_sheet([['LIDA'],['DUKATI'],['SAILING'],['GS']]);
+  ['lida','DUKATI','SAILING','GS'].forEach((k,i) => ws3['B'+(i+1)] = {t:'n', f:`SUMPRODUCT(--ISNUMBER(SEARCH("${k}",${D})),${I})`, v:0});
+  ws3['!ref'] = 'A1:B4';
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, 'Sheet1'); XLSX.utils.book_append_sheet(wb, ws2, 'CALCULATION'); XLSX.utils.book_append_sheet(wb, ws3, 'DONT DELETE');
+  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}};
+  return {name:'FINAL PRODUCTION REPORT - ' + fileDate() + ' (UNIT-'+u+').xlsx', blob:aoaBlob(wb)};
+}
+
+/* ---------- ACTUAL file (ACTUAL FLOOR REPORT: Sheet1 / CATEGORY / BATCHMC) ---------- */
+function buildActualXlsx(u){
+  const iso = STATE.reportIso, [Y,Mo,Dd] = iso.split('-').map(Number), cfg = UNIT_CFG[u];
+  const rows = actualRows(u), sm = summarize(reportRows(u), u), mr = monthReport(u);
+  const R = Math.max(300, rows.length + 100);                 // formula range end on Sheet1
+  const rng = c => `Sheet1!$${c}$4:$${c}$${R}`;
+  const NC = NOCACHE();
+  const fcell = (f, v, z) => { const o = NC ? {t:'n', f} : {t:typeof v==='string'?'s':'n', f, v}; if(z) o.z = z; return o; };
+
+  /* --- Sheet1: the day's rows exactly as typed (brackets stay, so unfinished batches stay out of the totals) --- */
+  const ws1 = {}, H1 = ['DATE','MACHINE','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRICATION','QTY(KG(','LOAD TIME','UNLOAD TIME','DURATION','RFT','CATEGORY','SHADE'];
+  ws1['A1'] = {t:'s', v:'DAILY ACTUAL PRODUCTION REPORT - ' + Y, s:{font:{name:'Calibri',sz:12,bold:true}}};
+  H1.forEach((h,c) => ws1[XLSX.utils.encode_cell({r:2,c})] = {t:'s', v:h, s:cellStyle('DDEBF7',{b:1,sz:11})});
+  const dateTxt = pad2(Dd)+'.'+pad2(Mo)+'.'+Y;
+  rows.forEach((r,i) => {
+    const row = 3 + i, put = (c, cell) => { ws1[XLSX.utils.encode_cell({r:row,c})] = cell; };
+    const sample = /SAMPLE/i.test(r.mc);
+    if(!sample) put(0, {t:'s', v: dateTxt});
+    put(1, /^\d+$/.test(String(r.mc).trim()) ? {t:'n', v:+r.mc} : {t:'s', v:r.mc});
+    if(r.cap != null) put(2, {t:'n', v:r.cap});
+    [[3,r.buyer],[4,r.order],[6,r.color],[7,r.fabric]].forEach(([c,v]) => { if(v) put(c, {t:'s', v}); });
+    if(r.batchRaw !== '' && r.batchRaw != null) put(5, typeof r.batchRaw === 'number' ? {t:'n', v:r.batchRaw} : {t:'s', v:String(r.batchRaw)});
+    if(r.qty !== null || r.flagged){
+      if(r.flagged || typeof r.qtyRaw === 'string' && !/^\d+(\.\d+)?$/.test(r.qtyRaw.trim())) put(8, {t:'s', v:String(r.qtyRaw)});
+      else put(8, {t:'n', v:r.qty});
+    }
+    [[9,r.loadTime],[10,r.unloadTime]].forEach(([c,v]) => { if(!v) return; const f = timeToCell(v); put(c, f === null ? {t:'s', v} : {t:'n', v:f, z:'h:mm AM/PM'}); });
+    [[11,r.duration],[12,r.rft],[13,r.category],[14,r.shade]].forEach(([c,v]) => { if(v) put(c, {t:'s', v}); });
+  });
+  ws1['!ref'] = 'A1:O' + (3 + rows.length);
+  ws1['!cols'] = [14.3,9,8,22.9,16.6,16,20,22,11.7,13,13.4,13,10,12.6,26].map(w => ({wch:w}));
+
+  /* --- CATEGORY: month to date, earlier days as values, this day live from Sheet1 --- */
+  const ws2 = {}, merges2 = [], S2 = (a, cell) => ws2[a] = cell, n = mr.n;
+  const first = 6, last = first + n - 1, sumRow = last + 2;
+  const mrow = x => first + (+x.iso.slice(8)) - 1;
+  const title = '  CATEGORY-WISE PRODUCTION REPORT (' + MONTHS[Mo-1] + ' - ' + Y + ')';
+  S2('A2', {t:'s', v:'M.N. DYEING, PRINTING & WASHING MILLS LTD.', s:cellStyle(null,{b:1,sz:14,nob:1})}); merges2.push({s:{r:1,c:0},e:{r:1,c:9}});
+  for(let c=0;c<8;c++) S2(XLSX.utils.encode_cell({r:3,c}), {t:'s', v:c===0?title:'', s:cellStyle('A9D08E',{b:1,sz:14})});
+  merges2.push({s:{r:3,c:0},e:{r:3,c:7}});
+  S2('I4', {t:'s', v:'UNIT - '+u, s:cellStyle('A9D08E',{b:1,sz:16})}); S2('J4', {t:'s', v:'', s:cellStyle('A9D08E')}); merges2.push({s:{r:3,c:8},e:{r:3,c:9}});
+  S2('K4', {t:'s', v:"IF THE VALUE MATCHES\nTHEN U'RE RIGHT,\nIF DOESN'T, THEN CHECK THE CATEGORY IS RIGHT OR WRONG", s:{font:{name:'Calibri',sz:8,bold:true,color:{rgb:'C00000'}}, alignment:{wrapText:true,vertical:'top'}}});
+  ['DATE','PRODUCTION QTY','COLOR','DPD','DPD (%)','WHITE / WASH','WHITE /\nWASH (%)','REPROCESS','R/M\n(%)','SAMPLE'].forEach((h,c) =>
+    S2(XLSX.utils.encode_cell({r:4,c}), {t:'s', v:h, s:cellStyle('D9E2F3',{b:1,sz:12,wrap:1})}));
+  const FMT = {B:'0',C:'0',D:'0',E:'0.0%',F:'0',G:'0.00%',H:'0',I:'0.00%',J:'0'};
+  const base = cellStyle(null,{sz:12});
+  mr.days.forEach(x => {
+    const r = mrow(x), d = +x.iso.slice(8);
+    S2('A'+r, {t:'n', v: Date.UTC(Y,Mo-1,d)/86400000 + 25569, z:'d-mmm-yy', s:{...base}});
+    'BCDEFGHIJ'.split('').forEach(c => S2(c+r, {t:'s', v:'', s:{...base}}));
+    if(!x.src) return;
+    const live = x.src === 'today';
+    const set = (c, val, f) => S2(c+r, {...(f && live ? fcell(f, val) : {t:'n', v:val}), z:FMT[c], s:{...base}});
+    set('B', x.B, `SUMIFS(${rng('I')},${rng('B')},">=${cfg.lo}",${rng('B')},"<=${cfg.hi}")+SUMIFS(${rng('I')},${rng('B')},"${cfg.sample}")`);
+    set('C', x.C, `SUMPRODUCT(--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),--ISNUMBER(SEARCH("COLOR",${rng('N')})),${rng('I')})`);
+    set('D', x.D, `SUMPRODUCT(--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),--ISNUMBER(SEARCH("DPD",${rng('N')})),${rng('I')})`);
+    set('F', x.F, `SUMPRODUCT(--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),--((ISNUMBER(SEARCH("WHITE",TRIM(${rng('N')})))+ISNUMBER(SEARCH("WASH",TRIM(${rng('N')})))+ISNUMBER(SEARCH("SCOURING",TRIM(${rng('N')})))+ISNUMBER(SEARCH("RFD",TRIM(${rng('N')}))))>0),${rng('I')})`);
+    set('H', x.H);
+    set('J', x.J, `SUMPRODUCT(--ISNUMBER(SEARCH("SAMPLE",TRIM(${rng('B')}))),${rng('I')})`);
+    S2('E'+r, {...fcell(`D${r}/B${r}`, x.B ? x.D/x.B : 0), z:FMT.E, s:{...base}});
+    S2('G'+r, {...fcell(`F${r}/B${r}`, x.B ? x.F/x.B : 0), z:FMT.G, s:{...base}});
+    S2('I'+r, {...fcell(`H${r}/B${r}`, x.B ? x.H/x.B : 0), z:FMT.I, s:{...base}});
+    S2('K'+r, {...fcell(`C${r}+D${r}+F${r}+J${r}`, x.C+x.D+x.F+x.J), s:{font:{name:'Calibri',sz:11,bold:true}, alignment:{horizontal:'center'}}});
+    S2('L'+r, {...fcell(`IF(K${r}=B${r},"OK","WRONG")`, x.ok ? 'OK' : 'WRONG'), s:{font:{name:'Calibri',sz:11,bold:true,color:{rgb:x.ok?'1F7A70':'C00000'}}, alignment:{horizontal:'center'}}});
+  });
+  const T = mr.tot, wdv = mr.wd || 1, gray = {b:1, sz:12};
+  const fr = (label, row, vals, lblSz) => {
+    S2('A'+row, {t:'s', v:label, s:cellStyle('D9D9D9',{b:1,sz:lblSz||12})});
+    'BCDEFGHIJ'.split('').forEach(c => { const v = vals[c];
+      S2(c+row, v ? {...v, s:cellStyle('D9D9D9',gray)} : {t:'s', v:'', s:cellStyle('D9D9D9',gray)}); });
+  };
+  const sumV = (c, v, z) => ({...fcell(`SUM(${c}${first}:${c}${last})/1000`, v/1000), z:z||'0.00'});
+  fr('SUM (MT)', sumRow, {B:sumV('B',T.B), C:sumV('C',T.C), D:sumV('D',T.D), F:sumV('F',T.F), H:sumV('H',T.H,'0.000'), J:sumV('J',T.J)});
+  const avgV = (c, v) => ({...fcell(`${c}${sumRow}/$B$${sumRow+3}`, v/1000/wdv), z:'0.000'});
+  fr('AVG(MT)', sumRow+1, {B:avgV('B',T.B), C:avgV('C',T.C), D:avgV('D',T.D), F:avgV('F',T.F), H:avgV('H',T.H), J:avgV('J',T.J)}, 11);
+  const pV = (c, v) => ({...fcell(`${c}${sumRow+1}/$B${sumRow+1}`, T.B ? v/T.B : 0), z:'0.00%'});
+  fr('PERCENTAGE=', sumRow+2, {B:{...fcell(`B${sumRow}/B${sumRow}`, 1), z:'0.00%'}, C:pV('C',T.C), D:pV('D',T.D), F:pV('F',T.F), H:pV('H',T.H), J:pV('J',T.J)}, 10);
+  fr('WORKING DAY=', sumRow+3, {B:{...fcell(`COUNT(B${first}:B${last})`, mr.wd), z:'0.0'}}, 10);
+  const sg = sumRow + 10;
+  [['B','PREPARED BY'],['D','MANAGER'],['G','AGM'],['I','GM']].forEach(([c,t]) => S2(c+sg, {t:'s', v:t, s:{font:{name:'Calibri',sz:12,underline:true}, alignment:{horizontal:'center'}}}));
+  merges2.push({s:{r:sg-1,c:3},e:{r:sg-1,c:4}});
+  ws2['!ref'] = 'A1:L' + sg; ws2['!merges'] = merges2;
+  ws2['!cols'] = [12.4,15.1,12.9,13.6,9.4,11.9,14.6,11.3,10.7,11.6,21.9,9.1].map(w => ({wch:w}));
+  ws2['!rows'] = []; ws2['!rows'][1] = {hpt:23}; ws2['!rows'][3] = {hpt:26}; ws2['!rows'][4] = {hpt:34.5};
+
+  /* --- BATCHMC: machine wise --- */
+  const ws3 = {}, merges3 = [], S3 = (a, cell) => ws3[a] = cell;
+  const m0 = 7, mN = m0 + sm.machines.length - 1, rSmp = mN + 1, hasOther = cfg.skip.length > 0, rOth = hasOther ? rSmp + 1 : null, rTot = (rOth || rSmp) + 1;
+  const wid = [12,12,10,10,13,13,12,13,36];
+  S3('A2', {t:'s', v:'M.N. DYEING, PRINTING & WASHING MILLS LTD.', s:cellStyle(null,{b:1,sz:14,nob:1})}); merges3.push({s:{r:1,c:0},e:{r:1,c:8}});
+  S3('A5', {t:'s', v:'UNIT - '+u, s:cellStyle('E7E6E6',{b:1,sz:16})});
+  for(let c=1;c<8;c++) S3(XLSX.utils.encode_cell({r:4,c}), {t:'s', v:c===1?'MACHINE WISE PRODUCTION REPORT':'', s:cellStyle(null,{b:1,sz:14,nob:1})});
+  merges3.push({s:{r:4,c:1},e:{r:4,c:7}});
+  S3('I5', {t:'s', v:pad2(Dd)+'.'+pad2(Mo)+'.'+String(Y).slice(2), s:cellStyle(null,{sz:12,nob:1})});
+  ['MACHINE','CAPACITY','COLOR','DPD','WHITE/WASH','TOTAL BATCH','QTY','TARGET BATCH','REMARKS'].forEach((h,c) =>
+    S3(XLSX.utils.encode_cell({r:5,c}), {t:'s', v:h, s:cellStyle('D9E2F3',{b:1,sz:11})}));
+  const plain = cellStyle(null,{sz:12});
+  sm.machines.forEach((m,i) => {
+    const r = m0 + i, B_ = rng('B'), N_ = rng('N'), I_ = rng('I');
+    S3('A'+r, {t:'n', v:m.mc, s:{...plain}}); S3('B'+r, {t:'n', v:m.cap, s:{...plain}});
+    S3('C'+r, {...fcell(`SUMPRODUCT((${B_}=A${r})*ISNUMBER(SEARCH("COLOR",${N_}))*ISNUMBER(${I_}))`, m.color), s:{...plain}});
+    S3('D'+r, {...fcell(`SUMPRODUCT((${B_}=A${r})*ISNUMBER(SEARCH("DPD",${N_}))*ISNUMBER(${I_}))`, m.dpd), s:{...plain}});
+    S3('E'+r, {...fcell(`SUMPRODUCT((${B_}=A${r})*((ISNUMBER(SEARCH("WHITE",${N_}))+ISNUMBER(SEARCH("WASH",${N_}))+ISNUMBER(SEARCH("SCOURING",${N_}))+ISNUMBER(SEARCH("RFD",${N_})))>0)*ISNUMBER(${I_}))`, m.ww), s:{...plain}});
+    S3('F'+r, {...fcell(`SUM(C${r}:E${r})`, m.total), s:{...plain}});
+    S3('G'+r, {...fcell(`SUMPRODUCT(--(${B_}=A${r}),${I_})`, m.qty), s:{...plain}});
+    S3('H'+r, {t:'n', v:TARGET_BATCH, s:{...plain}}); S3('I'+r, {t:'s', v:'', s:{...plain}});
+  });
+  const blank = (r, a) => 'ABCDEFGHI'.split('').forEach(c => { if(!ws3[c+r]) S3(c+r, {t:'s', v:'', s:{...plain, ...(a||{})}}); });
+  S3('A'+rSmp, {t:'s', v:'SAMPLE', s:{...plain}}); blank(rSmp);
+  S3('G'+rSmp, {...fcell(`SUMPRODUCT(--ISNUMBER(SEARCH("SAMPLE",TRIM(${rng('B')}))),${rng('I')})`, sm.J), s:{...plain}});
+  if(hasOther){
+    S3('A'+rOth, {t:'s', v:'OTHER MC', s:{...plain}}); blank(rOth);
+    S3('G'+rOth, {...fcell(`G${rTot}-SUM(G${m0}:G${mN})-G${rSmp}`, sm.other), s:{...plain}});
+    S3('I'+rOth, {t:'s', v:'MC ' + cfg.skip.join(', ') + ' (not in the table above)', s:cellStyle(null,{sz:10})});
+  }
+  const tstyle = cellStyle('BDD7EE',{b:1,sz:12});
+  S3('A'+rTot, {t:'s', v:'', s:tstyle});
+  S3('B'+rTot, {...fcell(`SUM(B${m0}:B${mN})`, sm.tot.cap), s:tstyle});
+  [['C',sm.tot.c],['D',sm.tot.d],['E',sm.tot.w],['F',sm.tot.t]].forEach(([c,v]) => S3(c+rTot, {...fcell(`SUM(${c}${m0}:${c}${mN})`, v), s:tstyle}));
+  S3('G'+rTot, {...fcell(`SUMIFS(${rng('I')},${rng('B')},">=${cfg.lo}",${rng('B')},"<=${cfg.hi}")+SUMIFS(${rng('I')},${rng('B')},"${cfg.sample}")`, sm.B), s:tstyle});
+  S3('H'+rTot, {...fcell(`SUM(H${m0}:H${mN})`, sm.target), s:tstyle}); S3('I'+rTot, {t:'s', v:'', s:tstyle});
+  const r1 = rTot + 2, r2 = r1 + 1, big = {b:1, sz:12};
+  S3('A'+r1, {t:'s', v:'TOTAL PRODUCTION =', s:cellStyle(null,big)}); S3('B'+r1, {t:'s', v:'', s:cellStyle(null,big)}); merges3.push({s:{r:r1-1,c:0},e:{r:r1-1,c:1}});
+  S3('C'+r1, {...fcell(`G${rTot}`, sm.B), z:'0', s:cellStyle(null,big)});
+  S3('E'+r1, {t:'s', v:'AVG   =', s:cellStyle(null,big)});
+  S3('F'+r1, {...fcell(`AVERAGE(F${m0}:F${mN})`, sm.avgBatch), z:'0.00', s:cellStyle(null,big)});
+  S3('G'+r1, {t:'s', v: cfg.skip.length ? 'average is without mc ' + cfg.skip.join(',') : 'average of all machines', s:cellStyle(null,{b:1,sz:9,wrap:1})});
+  S3('H'+r1, {t:'s', v:'', s:cellStyle(null,big)}); merges3.push({s:{r:r1-1,c:6},e:{r:r1-1,c:7}});
+  S3('A'+r2, {t:'s', v:'LOADING % =', s:cellStyle(null,big)}); S3('B'+r2, {t:'s', v:'', s:cellStyle(null,big)}); merges3.push({s:{r:r2-1,c:0},e:{r:r2-1,c:1}});
+  S3('C'+r2, {...fcell(`C${r1}/SUMPRODUCT(--ISNUMBER(${rng('I')}),${rng('C')})%`, sm.loading ?? 0), z:'0.0', s:cellStyle(null,big)});
+  const rs = r2 + 4;
+  [['A','PREPARED BY'],['E','MANAGER'],['G','AGM'],['I','GM']].forEach(([c,t]) => S3(c+rs, {t:'s', v:t, s:{font:{name:'Calibri',sz:12,underline:true}, alignment:{horizontal:'center'}}}));
+  ws3['!ref'] = 'A1:I' + rs; ws3['!merges'] = merges3; ws3['!cols'] = wid.map(w => ({wch:w}));
+  ws3['!rows'] = []; ws3['!rows'][r1-1] = {hpt:26};
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, 'Sheet1'); XLSX.utils.book_append_sheet(wb, ws2, 'CATEGORY'); XLSX.utils.book_append_sheet(wb, ws3, 'BATCHMC');
+  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}};
+  return {name:`ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-${u}).xlsx`, blob:aoaBlob(wb)};
+}
+
+/* ---------- PNG helper: minimum column widths, coloured head, zebra rows ---------- */
+function tablePng(o){
+  const S = 2, PAD = 7, RH = 24, TOP = 62, m = document.createElement('canvas').getContext('2d');
+  const wid = (s,f) => { m.font = f; return m.measureText(String(s)).width; };
+  const all = o.rows.concat(o.foot ? [o.foot] : []);
+  const cw = o.head.map((h,i) => Math.ceil(Math.max(wid(h,'bold 12px Arial'), ...all.map(r => wid(r.cells[i],'bold 12px Arial')))) + PAD*2);
+  const W = Math.max(cw.reduce((a,b)=>a+b,0), 330), H = TOP + RH*(all.length+1) + 6;
+  const cv = document.createElement('canvas'); cv.width = W*S; cv.height = H*S;
+  const c = cv.getContext('2d'); c.scale(S,S); c.fillStyle = '#fff'; c.fillRect(0,0,W,H);
+  const T = (s,x,y,f,col,al) => { c.font = f; c.fillStyle = col; c.textAlign = al||'left'; c.textBaseline = 'middle'; c.fillText(String(s),x,y); };
+  c.fillStyle = '#12232B'; c.fillRect(0,0,W,TOP-8);
+  T(o.title, 14, 22, 'bold 18px Arial', '#fff'); T(o.sub, 14, 42, '12px Arial', '#C9D6DA'); T(o.date, W-14, 22, 'bold 14px Arial', '#E0A339', 'right');
+  let y = TOP; const rowFn = (cells, bg, fg, font) => { c.fillStyle = bg; c.fillRect(0,y,W,RH); c.fillStyle = 'rgba(0,0,0,.07)'; c.fillRect(0,y+RH-1,W,1);
+    let x = 0; cells.forEach((v,i) => { if(o.right.includes(i)) T(v, x+cw[i]-PAD, y+RH/2, font, fg, 'right'); else T(v, x+PAD, y+RH/2, font, fg); x += cw[i]; }); y += RH; };
+  rowFn(o.head, '#'+HEADC, '#fff', 'bold 12px Arial');
+  o.rows.forEach(r => rowFn(r.cells, r.bg, r.fg||'#222', r.bold ? 'bold 12px Arial' : '12px Arial'));
+  if(o.foot) rowFn(o.foot.cells, '#12232B', '#fff', 'bold 12px Arial');
+  return new Promise(res => cv.toBlob(b => res({name:o.file, blob:b}), 'image/png'));
+}
+function buildBuyerPng(u){
+  const rp = buyerReport(reportRows(u)), rows = [];
+  const IN = rp.lines.filter(l => l.grp==='IN' && l.qty>0), SUB = rp.lines.filter(l => l.grp==='SUB' && l.qty>0);
+  const grp = (name, list, total, dark, mid, light) => { rows.push({cells:[name, n0(total)], bg:dark, bold:1, fg:'#fff'});
+    list.forEach((l,i) => rows.push({cells:[l.name, n0(l.qty)], bg:i%2?'#fff':light}));
+    rows.push({cells:['SUM OF '+name, n0(total)], bg:mid, bold:1}); };
+  grp('IN HOUSE', IN, rp.inQty, '#1F7A70', '#9ED3CB', '#E6F4F1'); grp('SUB CONTRACT', SUB, rp.subQty, '#C77D0A', '#F2CB84', '#FFF3DC');
+  rows.push({cells:['SAMPLE', n0(rp.sample)], bg:'#F1F1F1'});
+  return tablePng({title:'UNIT - '+u, sub:'BUYER WISE PRODUCTION REPORT', date:dateLabel(), head:['BUYER','QTY (KG)'], right:[1], rows, foot:{cells:['TOTAL', n0(rp.total)]},
+    file:'BUYER WISE REPORT - '+fileDate()+' (UNIT-'+u+').png'});
+}
+function buildMcPng(u){
+  const rows = unitRows(u).filter(r => r.qty !== null);
+  const tr = rows.map(r => { const mc = parseInt(r.mc,10);
+    return {cells:[r.mc, r.cap??'', r.buyer||'', r.order||'', r.batch||'', r.color||'', r.fabric||'', n0(r.qty), r.category||''], bg: isNaN(mc) ? '#EEEEEE' : (mc%2===0 ? '#'+LIGHT : '#fff')}; });
+  return tablePng({title:'UNIT - '+u, sub:'MC WISE PRODUCTION REPORT', date:dateLabel(), head:['M/C','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','CATEGORY'], right:[1,7], rows:tr,
+    foot:{cells:['TOTAL','','','','','','',n0(rows.reduce((s,r)=>s+r.qty,0)),'']}, file:'MC WISE REPORT - '+fileDate()+' (UNIT-'+u+').png'});
+}
+
+/* ---------- PRINT PDF for the superior: CATEGORY page (portrait) + MACHINE page (landscape) ---------- */
+const LOGO = 'data:image/jpeg;base64,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';
+function buildFinalPdf(u){
+  const mr = monthReport(u), sm = summarize(reportRows(u), u), cfg = UNIT_CFG[u];
+  if(!mr) throw new Error('the date of this file could not be read');
+  if(!window.jspdf) throw new Error('the PDF library did not load');
+  const doc = new window.jspdf.jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+  const rgb = h => [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+  const cell = (x,y,w,h,txt,o={}) => {
+    if(o.fill){ doc.setFillColor(...rgb(o.fill)); doc.rect(x,y,w,h,'F'); }
+    doc.setDrawColor(70,70,70); doc.setLineWidth(0.15); doc.rect(x,y,w,h);
+    doc.setFont('helvetica', o.bold ? 'bold' : 'normal'); doc.setFontSize(o.size||9); doc.setTextColor(...rgb(o.color||'000000'));
+    const lines = String(txt ?? '').split('\n');
+    lines.forEach((t,i) => doc.text(t, o.left ? x+1.6 : x+w/2, y+h/2 + (i-(lines.length-1)/2)*(o.size||9)*0.4 + (o.size||9)*0.135, {align:o.left?'left':'center'}));
+  };
+  const sign = (xs, y) => { doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(40,40,40);
+    xs.forEach(([x,w,t]) => { doc.setDrawColor(90); doc.setLineWidth(0.2); doc.line(x, y, x+w, y); doc.text(t, x+w/2, y+4.5, {align:'center'}); }); };
+
+  /* page 1 — CATEGORY */
+  doc.addImage(LOGO, 'JPEG', 86, 6, 38, 15.8);
+  cell(10, 24, 152, 9, 'CATEGORY-WISE PRODUCTION REPORT (' + MONTHS[mr.m-1] + ' - ' + mr.y + ')', {fill:'A9D08E', bold:1, size:11.5});
+  cell(162, 24, 38, 9, 'UNIT - ' + u, {fill:'A9D08E', bold:1, size:13});
+  const cw = [20,22,19,18,16,19,18,20,18,20];
+  const heads = ['DATE','PRODUCTION\nQTY','COLOR','DPD','DPD (%)','WHITE /\nWASH','WHITE /\nWASH (%)','REPROCESS','R/M\n(%)','SAMPLE'];
+  let x = 10; heads.forEach((h,i) => { cell(x, 33, cw[i], 11, h, {fill:'D9E2F3', bold:1, size:8}); x += cw[i]; });
+  const RH = 6.1; let y = 44;
+  mr.days.forEach(d => {
+    const vals = d.src ? [dmy(d.iso), n0(d.B), n0(d.C), n0(d.D), pct(d.D,d.B,1), n0(d.F), pct(d.F,d.B,2), n0(d.H), pct(d.H,d.B,2), n0(d.J)] : [dmy(d.iso),'','','','','','','','',''];
+    let xx = 10; vals.forEach((v,i) => { cell(xx, y, cw[i], RH, v, {size:8.5}); xx += cw[i]; }); y += RH;
+  });
+  y += RH;
+  const T = mr.tot, wd = mr.wd || 1, mt = v => v/1000;
+  const foot = [
+    ['SUM (MT)',  [mt(T.B).toFixed(2), mt(T.C).toFixed(2), mt(T.D).toFixed(2), '', mt(T.F).toFixed(2), '', mt(T.H).toFixed(3), '', mt(T.J).toFixed(2)], 9],
+    ['AVG (MT)',  [(mt(T.B)/wd).toFixed(3), (mt(T.C)/wd).toFixed(3), (mt(T.D)/wd).toFixed(3), '', (mt(T.F)/wd).toFixed(3), '', (mt(T.H)/wd).toFixed(3), '', (mt(T.J)/wd).toFixed(3)], 8.5],
+    ['PERCENTAGE=', ['100.00%', pct(T.C,T.B,2), pct(T.D,T.B,2), '', pct(T.F,T.B,2), '', pct(T.H,T.B,2), '', pct(T.J,T.B,2)], 6.5],
+    ['WORKING DAY=', [mr.wd.toFixed(1), '', '', '', '', '', '', '', ''], 6.5]];
+  foot.forEach(([lbl, vals, sz]) => { let xx = 10; [lbl, ...vals].forEach((v,i) => { cell(xx, y, cw[i], 6, v, {fill:'D9D9D9', bold:1, size:i===0?sz:8.5}); xx += cw[i]; }); y += 6; });
+  sign([[14,36,'PREPARED BY'],[62,36,'MANAGER'],[112,36,'AGM'],[160,36,'GM']], 281);
+
+  /* page 2 — MACHINE WISE */
+  doc.addPage('a4', 'landscape');
+  doc.addImage(LOGO, 'JPEG', 131.5, 4, 34, 14.2);
+  cell(10, 20, 30, 10, 'UNIT - ' + u, {fill:'E7E6E6', bold:1, size:14});
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(0,0,0); doc.text('MACHINE WISE PRODUCTION REPORT', 148.5, 26.6, {align:'center'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.text(pad2(+mr.iso.slice(8)) + '.' + mr.iso.slice(5,7) + '.' + mr.iso.slice(2,4), 287, 26.6, {align:'right'});
+  const mw = [24,26,24,24,28,28,28,28,67];
+  const mh = ['MACHINE','CAPACITY','COLOR','DPD','WHITE/WASH','TOTAL BATCH','QTY','TARGET BATCH','REMARKS'];
+  x = 10; mh.forEach((h,i) => { cell(x, 32, mw[i], 8, h, {fill:'D9E2F3', bold:1, size:8.5}); x += mw[i]; });
+  y = 40; const MR = 5.8;
+  const mrow = (vals, o) => { let xx = 10; vals.forEach((v,i) => { cell(xx, y, mw[i], MR, v, {size:9.5, ...o, left: i===8}); xx += mw[i]; }); y += MR; };
+  sm.machines.forEach(m => mrow([m.mc, n0(m.cap), m.color, m.dpd, m.ww, m.total, n0(m.qty), TARGET_BATCH, '']));
+  mrow(['SAMPLE','','','','','',n0(sm.J),'','']);
+  if(cfg.skip.length) mrow(['OTHER MC','','','','','',n0(sm.other),'','MC ' + cfg.skip.join(', ')], {});
+  mrow([n0(sm.tot.cap), '', sm.tot.c, sm.tot.d, sm.tot.w, sm.tot.t, n0(sm.B), sm.target, ''], {fill:'BDD7EE', bold:1});
+  y += 5;
+  cell(10, y, 52, 8, 'TOTAL PRODUCTION =', {bold:1, size:11}); cell(62, y, 28, 8, n0(sm.B), {bold:1, size:11});
+  cell(110, y, 40, 8, 'AVG   =', {bold:1, size:11}); cell(150, y, 24, 8, sm.avgBatch.toFixed(2), {bold:1, size:11});
+  cell(174, y, 46, 8, cfg.skip.length ? 'average is without mc ' + cfg.skip.join(',') : 'average of all machines', {bold:1, size:7});
+  y += 8;
+  cell(10, y, 52, 8, 'LOADING % =', {bold:1, size:11}); cell(62, y, 28, 8, sm.loading === null ? '—' : sm.loading.toFixed(1), {bold:1, size:11});
+  sign([[14,50,'PREPARED BY'],[110,50,'MANAGER'],[175,50,'AGM'],[236,50,'GM']], 198);
+  return {name:'FINAL REPORT - ' + fileDate() + ' (UNIT-'+u+').pdf', blob: doc.output('blob')};
+}
+
+/* ---------- buttons ---------- */
+$('actualBtn').addEventListener('click', () => runExport(async u => buildActualXlsx(u)));
+$('exportBtn').addEventListener('click', () => runExport(async u => buildFinalXlsx(u)));
+$('pngBtn').addEventListener('click', () => runExport(u => buildBuyerPng(u)));
+$('pngMcBtn').addEventListener('click', () => runExport(u => buildMcPng(u)));
+
+/* everything, both units, one zip so the viewer is asked to save only once */
+$('bothBtn').addEventListener('click', async () => {
+  if(busy) return;
+  aggregate();
+  const todo = [1,2].filter(u => summarize(reportRows(u), u).hasData), skipped = [1,2].filter(u => !todo.includes(u));
+  if(!todo.length){ toast('Nothing to export for this day.', 'err'); return; }
+  if(!window.JSZip){ toast('The zip library did not load. Export the files one by one.', 'err'); return; }
+  const lines = todo.map(u => { const rows = unitRows(u); const mcs = [...new Set(rows.filter(r=>unitOfMc(r.mc)).map(r=>+r.mc))].sort((a,b)=>a-b); const sm = summarize(reportRows(u), u);
+    return `<p><b>UNIT ${u}</b> (MC ${UNIT_RANGE[u]})<br>Machines: ${mcs.join(', ')}<br>Production: ${n0(sm.B)} kg · category check ${sm.ok ? '<span class="m-ok">OK</span>' : '<span class="m-bad">WRONG</span>'}</p>`; }).join('');
+  const go = await askModal({title:'Export everything · ' + reportLabel(), body: lines + '<p>One zip with, for each unit: actual file, final file, buyer picture, machine picture.</p>' + (skipped.length ? '<p class="sec-note">UNIT ' + skipped.join(' and ') + ' has no rows, skipped.</p>' : ''), ok:'Export zip'});
+  if(!go) return;
+  busy = true;
+  try{
+    const zip = new JSZip();
+    for(const u of todo){
+      if(!(await exportGuard(u, true))) throw new Error('UNIT ' + u + ' has rows with a wrong MC number');
+      const folder = zip.folder('UNIT-' + u);
+      for(const b of [buildActualXlsx, buildFinalXlsx, buildBuyerPng, buildMcPng]){ const f = await b(u); folder.file(f.name, f.blob); }
+    }
+    const blob = await zip.generateAsync({type:'blob'});
+    await saveFile('FINAL PACKAGE - ' + fileDate() + '.zip', blob);
+  }catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
+  finally{ busy = false; }
+});
+
+/* ============================================================
+   HISTORY — saved days kept in the hosted page's database
+   ============================================================ */
+const pack = r => ({m:r.mc, c:r.cap ?? null, b:r.buyer, o:r.order, n:r.batchRaw ?? '', g:r.color, f:r.fabric, q:r.qtyRaw ?? '', l:r.loadTime, u:r.unloadTime, d:r.duration, r:r.rft, k:r.category, s:r.shade});
+function unpack(p, day, src){
+  const {num, flagged} = parseQty(p.q);
+  return {id:nextId++, mc:String(p.m), cap:p.c, buyer:p.b||'', order:p.o||'', batch:String(p.n??'').trim(), batchRaw:p.n, qty:num, qtyRaw:p.q, flagged,
+    loadTime:p.l||'', unloadTime:p.u||'', duration:p.d||'', rft:p.r||'', category:p.k||'', color:p.g||'', fabric:p.f||'', shade:p.s||'',
+    date:labelOf(day), iso:day, sourceFile:src};
+}
+async function writeDay(u, iso, entries){
+  const s = summarize(entries, u); if(!s.hasData) return false;
+  const id = reprocKey(u, iso), label = labelOf(iso), at = new Date().toISOString();
+  const H = reprocFor(u, iso, s.Hauto);
+  await CAP.db.collection('days').doc(id).set({unit:u, iso, label, savedAt:at, rows:entries.map(pack)});
+  await CAP.db.collection('sums').doc(id).set({unit:u, iso, label, savedAt:at, B:s.B, C:s.C, D:s.D, F:s.F, H, J:s.J, batches:s.batches, ok:s.ok});
+  return true;
+}
+function startHistory(){
+  if(!CAP.db) return;
+  CAP.db.collection('sums').onSnapshot(snap => {
+    const h = {}; snap.docs.forEach(d => { h[d.id] = d.data(); });
+    STATE.hist = h; STATE.histReady = true; STATE.histErr = '';
+    if(dashboard.style.display !== 'none') renderFinal();
+    renderHistory();
+  }, err => { STATE.histErr = (err && err.message) || 'could not read history'; renderHistory(); });
+}
+$('saveDayBtn').addEventListener('click', async () => {
+  if(busy || !CAP.db) return; busy = true;
+  try{
+    let saved = [];
+    for(const u of [1,2]){ if(await writeDay(u, STATE.reportIso, dayRowsOf(u, STATE.reportIso))) saved.push('UNIT ' + u); }
+    toast(saved.length ? 'Saved ' + labelOf(STATE.reportIso) + ' (' + saved.join(' and ') + ') to history' : 'Nothing to save for this day', saved.length ? '' : 'err');
+  }catch(e){ console.error(e); toast('Could not save to history: ' + (e && e.message || e), 'err'); }
+  finally{ busy = false; }
+});
+/* one click per day: bring the online log up to date with the main file (new days, changed days, and today as shown on screen) */
+async function syncOnlineLog(){
+  if(busy || !CAP.db || !STATE.main) return; busy = true;
+  const btn = $('syncBtn'), old = btn.textContent; let done = 0;
+  try{
+    const todo = [];
+    STATE.main.days.forEach(d => [1,2].forEach(u => {
+      const rows = d.iso === STATE.reportIso ? dayRowsOf(u, d.iso) : d.entries.filter(e => e.unit === u);
+      const s = summarize(rows, u); if(!s.hasData) return;
+      const h = STATE.hist[reprocKey(u, d.iso)];
+      const same = h && ['B','C','D','F','J'].every(k => Math.abs((h[k]||0) - s[k]) < 0.5);
+      if(d.iso === STATE.reportIso || !same) todo.push([u, d.iso, rows]);
+    }));
+    for(const [u, iso, rows] of todo){ btn.textContent = 'Updating ' + (++done) + ' of ' + todo.length + '...'; await writeDay(u, iso, rows); }
+    toast(todo.length ? 'Online log updated: ' + todo.length + ' unit-day' + (todo.length>1?'s':'') + ' written' : 'Online log is already up to date');
+  }catch(e){ console.error(e); toast('Stopped after ' + done + ': ' + (e && e.message || e), 'err'); }
+  finally{ busy = false; btn.textContent = old; renderHistory(); }
+}
+$('syncBtn').addEventListener('click', syncOnlineLog);
+async function openHistoryDay(iso){
+  if(!CAP.db) return;
+  try{
+    const entries = [];
+    for(const u of [1,2]){
+      const snap = await CAP.db.collection('days').doc(reprocKey(u,iso)).get();
+      if(snap.exists){ const d = snap.data(); entries.push(...(d.rows||[]).map(p => unpack(p, iso, 'History · ' + labelOf(iso)))); }
+    }
+    if(!entries.length){ toast('That day has no saved rows', 'err'); return; }
+    STATE.parsed = STATE.parsed.filter(r => r.iso !== iso); STATE.sources = STATE.sources.filter(s => s.iso !== iso);
+    STATE.parsed.push(...entries);
+    STATE.sources.push({fileName:'History · ' + labelOf(iso), sheetName:'saved', date:labelOf(iso), iso, count:entries.length});
+    STATE.reportIso = iso; currentView = 'final';
+    afterLoad();
+  }catch(e){ console.error(e); toast('Could not open that day: ' + (e && e.message || e), 'err'); }
+}
+let histMonth = '';
+function renderHistory(){
+  historyInto($('historyPane'), 'hp');
+  const home = $('historyHome');
+  if(home){
+    const show = CAP.db && uploadScreen.style.display !== 'none' && Object.keys(STATE.hist).length > 0;
+    home.style.display = show ? 'block' : 'none';
+    if(show) historyInto($('historyHomeBody'), 'hh');
+  }
+}
+function historyInto(el, pfx){
+  if(!el) return;
+  if(!CAP.db){ el.innerHTML = '<div class="empty">History is kept on the hosted page. Open the published link to save each day and look back unit by unit. A local copy of this file cannot store history.</div>'; return; }
+  const u = STATE.unit;
+  const unitSw = `<div class="view-tabs" style="margin:0">${[1,2].map(x => `<button class="view-tab${x===u?' active':''}" data-unit="${x}">UNIT ${x}</button>`).join('')}</div>`;
+  const months = [...new Set(Object.values(STATE.hist).filter(h => h.unit === u).map(h => h.iso.slice(0,7)))].sort();
+  const cur = /^\d{4}-/.test(STATE.reportIso) ? STATE.reportIso.slice(0,7) : '';
+  if(cur && !months.includes(cur)) months.push(cur);
+  months.sort();
+  if(!months.includes(histMonth)) histMonth = months.includes(cur) ? cur : (months[months.length-1] || '');
+  const mainBtn = '';
+  if(!histMonth){ el.innerHTML = `<div class="hist-top">${unitSw}<div class="sec-note">${STATE.histErr ? esc(STATE.histErr) : 'Nothing saved yet. Press “Update online log” after loading the main file to keep every day here for others to open.'}</div>${mainBtn}<span class="sec-note" data-prog="1"></span></div>`; wireHist(el); return; }
+  const [y,m] = histMonth.split('-').map(Number), n = daysInMonth(y,m);
+  const rows = []; let sums = {B:0,C:0,D:0,F:0,H:0,J:0}, cnt = 0, maxB = 1;
+  for(let d=1; d<=n; d++){ const iso = isoOf(y,m,d), h = STATE.hist[reprocKey(u,iso)]; rows.push({iso, h}); if(h){ cnt++; Object.keys(sums).forEach(k => sums[k] += h[k]); maxB = Math.max(maxB, h.B); } }
+  const bars = rows.map((r,i) => { const h = r.h; if(!h) return `<div class="hb"><div class="hb-stack"></div><span>${i+1}</span></div>`;
+    const seg = (v,c) => `<i style="height:${(v/maxB*100).toFixed(1)}%;background:${c}"></i>`;
+    return `<div class="hb" title="${labelOf(r.iso)} · ${n0(h.B)} kg"><div class="hb-stack">${seg(h.J,'#9FB0B4')}${seg(h.F,'#C9C2B2')}${seg(h.D,'#E0A339')}${seg(h.C,'#5FA8A0')}</div><span>${i+1}</span></div>`; }).join('');
+  const trs = rows.map(r => { const h = r.h;
+    if(!h) return `<tr class="gap"><td>${dmy(r.iso)}</td><td colspan="8" class="ct-none">not saved</td></tr>`;
+    return `<tr class="${h.ok ? '' : 'wrong'}"><td>${dmy(r.iso)}</td><td>${n0(h.B)}</td><td>${n0(h.C)}</td><td>${n0(h.D)}</td><td>${n0(h.F)}</td><td>${n0(h.H)}</td><td>${n0(h.J)}</td>
+      <td>${h.ok ? '<span class="src history">OK</span>' : '<span class="src bad">check</span>'}</td><td><button class="btn small" data-open="${r.iso}">Open</button></td></tr>`; }).join('');
+  el.innerHTML = `<div class="hist-top">${unitSw}<label class="daysel">Month <select data-month="1">${months.map(mm => { const [yy,mo] = mm.split('-').map(Number); return `<option value="${mm}"${mm===histMonth?' selected':''}>${MONTHS[mo-1]} ${yy}</option>`; }).join('')}</select></label>
+      <span class="sec-note">UNIT ${u} · ${cnt} day${cnt===1?'':'s'} saved · ${n0(sums.B)} kg</span>${mainBtn}<span class="sec-note" data-prog="1"></span></div>
+    <div class="hist-chart" aria-label="Daily production">${bars}</div>
+    <div class="hist-legend"><span><i style="background:#5FA8A0"></i>Color</span><span><i style="background:#E0A339"></i>DPD</span><span><i style="background:#C9C2B2"></i>White / wash</span><span><i style="background:#9FB0B4"></i>Sample</span></div>
+    <div class="tscroll"><table class="cat-table"><thead><tr><th>DATE</th><th>PRODUCTION</th><th>COLOR</th><th>DPD</th><th>WHITE / WASH</th><th>REPROCESS</th><th>SAMPLE</th><th>CHECK</th><th></th></tr></thead><tbody>${trs}</tbody></table></div>`;
+  wireHist(el);
+}
+function wireHist(el){
+  const sel = el.querySelector('[data-month]'); if(sel) sel.onchange = () => { histMonth = sel.value; renderHistory(); };
+  const b = el.querySelector('[data-bulk]'); if(b) b.onclick = syncOnlineLog;
+  el.querySelectorAll('[data-open]').forEach(x => x.onclick = () => openHistoryDay(x.dataset.open));
+  el.querySelectorAll('[data-unit]').forEach(x => x.onclick = () => { STATE.unit = +x.dataset.unit; STATE.unitChosen = true; if(dashboard.style.display !== 'none') render(aggregate()); else renderHistory(); });
+}
+
+/* ---------- start: look for the hosted-page features, the page works without them ---------- */
+(async function initCaps(){
+  try{
+    if(window.claude && typeof window.claude.use === 'function'){
+      CAP.db = await window.claude.use('db'); CAP.downloads = await window.claude.use('downloads');
+    }
+  }catch(e){}
+  startHistory();
+  loadBuyerConfig();
+  if(dashboard.style.display !== 'none') updateActions();
+  renderHistory();
+})();
+
+
+/* ============================================================
+   CHECK ENTRY — today's rows laid out like the sheet, each with its problems
+   ============================================================ */
+let entryOnlyBad = false;
+function entryIssues(rows, u){
+  const rp = buyerReport(rows), unm = new Set(rp.unmapped);
+  const norm = b => String(b||'').replace(/[()\s]/g,'').toUpperCase();
+  const cnt = new Map(); rows.forEach(r => { const k = norm(r.batch); if(k) cnt.set(k, (cnt.get(k)||0)+1); });
+  const out = new Map();
+  rows.forEach(r => {
+    const p = [], smp = /SAMPLE/i.test(r.mc) || /^\s*(MC\s*)?(WASH|WASHING)\b/i.test(r.buyer||'');   // sample and machine-wash lines carry no batch
+    const open = /[()]/.test(r.batch||'') || r.flagged;   // brackets = batch still running: nothing to enter yet
+    if(!smp && !open){
+      if(!String(r.batch||'').trim()) p.push('batch number missing');
+      else if(cnt.get(norm(r.batch)) > 1) p.push('same batch number on ' + cnt.get(norm(r.batch)) + ' rows');
+      if(!String(r.buyer||'').trim()) p.push('buyer missing');
+      else if(unm.has(r)) p.push('buyer not in the list');
+      if(!String(r.color||'').trim()) p.push('colour missing');
+      if(!String(r.fabric||'').trim()) p.push('fabric missing');
+      if(r.qty === null || r.qty === undefined) p.push('quantity missing');
+      else if(r.cap && r.qty > r.cap) p.push('qty ' + n0(r.qty) + ' is above capacity ' + n0(r.cap));
+      if(!String(r.category||'').trim()) p.push('category missing');
+      else if(!KNOWN_CATEGORIES.includes(r.category.trim().toUpperCase()) && !/COLOR|DPD|WHITE|WASH|SCOUR|RFD/i.test(r.category)) p.push('category "' + r.category + '" not known');
+      if(!String(r.rft||'').trim()) p.push('status (RFT) missing');
+      if(!String(r.loadTime||'').trim()) p.push('load time missing');
+      if(!String(r.unloadTime||'').trim()) p.push('unload time missing'); else if(/NEXT/i.test(r.unloadTime)) p.push('unload time not entered (NEXT DAY)');
+      if((parseDurationHours(r.duration)||0) > 18) p.push('duration ' + r.duration + ' is very long');
+    }
+    if(unitOfMc(r.mc) === 0) p.push('machine number outside both units');
+    out.set(r, p);
+  });
+  return out;
+}
+function renderEntry(){
+  const el = $('entryPane'); if(!el) return;
+  const u = STATE.unit, rows = reportRows(u);
+  if(!rows.length){ el.innerHTML = '<div class="empty">No entries for UNIT ' + u + ' on ' + esc(reportLabel()) + '.</div>'; $('entryBadge').textContent = ''; return; }
+  const iss = entryIssues(rows, u);
+  const bad = rows.filter(r => iss.get(r).length), nIssues = bad.reduce((s,r) => s + iss.get(r).length, 0);
+  $('entryBadge').textContent = bad.length ? '(' + bad.length + ')' : '';
+  const show = entryOnlyBad ? bad : rows;
+  const H = ['#','M/C','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','CATEGORY','SHADE','LOAD','UNLOAD','RFT','CHECK'];
+  const trs = show.map(r => { const p = iss.get(r), i = rows.indexOf(r) + 1;
+    return `<tr class="${p.length ? 'bad' : ''}"><td class="rn">${i}</td><td class="c">${esc(r.mc)}</td><td>${r.cap ? n0(r.cap) : ''}</td><td>${esc(r.buyer)}</td><td>${esc(r.order)}</td><td class="${/same batch|batch number/.test(p.join()) ? 'x' : ''}">${esc(r.batch)}</td>
+      <td class="colour-cell">${esc(r.color)}</td><td>${esc(r.fabric)}</td><td class="n">${r.qty === null || r.qty === undefined ? '' : n0(r.qty)}</td><td>${esc(r.category)}</td><td>${esc(r.shade)}</td><td>${esc(r.loadTime)}</td><td>${esc(r.unloadTime)}</td><td>${esc(r.rft)}</td>
+      <td class="chk">${p.length ? p.map(esc).join('; ') : (/[()]/.test(r.batch||'') || r.flagged ? '<span class="opn">running (brackets), not counted</span>' : '<span class="okc">OK</span>')}</td></tr>`; }).join('');
+  el.innerHTML = `<div class="hist-top"><span class="sec-note"><b>UNIT ${u}</b> · ${esc(reportLabel())} · ${rows.length} rows · ${bad.length ? '<span class="badc">' + bad.length + ' rows need a look (' + nIssues + ' problems)</span>' : '<span class="okc">every row looks complete</span>'}</span>
+      <label class="daysel"><input type="checkbox" id="entryBad"${entryOnlyBad ? ' checked' : ''}> show problem rows only</label></div>
+    <div class="tscroll"><table class="entry-table"><thead><tr>${H.map(x => '<th>' + x + '</th>').join('')}</tr></thead><tbody>${trs || '<tr><td colspan="15" class="ct-none">No problems found.</td></tr>'}</tbody></table></div>`;
+  $('entryBad').onchange = e => { entryOnlyBad = e.target.checked; renderEntry(); };
+}
+
+
+/* ============================================================
+   BUYER LIST — add a buyer, switch IN HOUSE / SUB CONTRACT, add keywords.
+   Lives in its own window; the built-in list is never edited.
+   ============================================================ */
+function persistBuyers(){
+  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){}
+  if(CAP.db){ try{ CAP.db.collection('config').doc('buyers').set({json: JSON.stringify(STATE.custom)}).catch(() => {}); }catch(e){} }
+}
+async function loadBuyerConfig(){
+  if(!CAP.db) return;
+  try{
+    const s = await CAP.db.collection('config').doc('buyers').get();
+    if(s.exists){ const c = JSON.parse(s.data().json); STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}};
+      try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){}
+      if(dashboard.style.display !== 'none') render(aggregate()); }
+  }catch(e){}
+}
+const kwList = s => String(s||'').split(',').map(x => x.trim()).filter(Boolean);
+function buyerSettings(){
+  let box = $('bset'); if(!box){ box = document.createElement('div'); box.id = 'bset'; box.className = 'modal'; document.body.appendChild(box); }
+  box.style.display = 'flex';
+  const draw = () => {
+    const rules = effectiveRules().sort((a,b) => (b.custom?1:0) - (a.custom?1:0));
+    const mine = new Set(STATE.custom.added.map(b => b.name));
+    const rows = rules.map(r => {
+      const asg = !RULES.find(x => x.name === r.name) && !mine.has(r.name) && (STATE.assign[r.name] === 'IN' || STATE.assign[r.name] === 'SUB');
+      const base = RULES.find(x => x.name === r.name), custom = mine.has(r.name);
+      const changed = custom || (base && (STATE.custom.grp[r.name] || (STATE.custom.keys[r.name]||[]).length));
+      const builtin = base ? base.keys.join(', ') : '';
+      const extra = custom ? STATE.custom.added.find(b => b.name === r.name).keys.join(', ') : (STATE.custom.keys[r.name]||[]).join(', ');
+      return `<tr data-n="${esc(r.name)}"><td><b>${esc(r.name)}</b>${custom ? ' <span class="src today">added</span>' : (changed ? ' <span class="src history">changed</span>' : '')}</td>
+        <td><select data-grp class="edit-input"><option value="IN"${r.grp==='IN'?' selected':''}>IN HOUSE</option><option value="SUB"${r.grp==='SUB'?' selected':''}>SUB CONTRACT</option></select></td>
+        <td class="kw">${builtin ? '<span class="sec-note">' + esc(builtin) + (r.exact ? ' (exact)' : '') + '</span><br>' : ''}${(r.exact || asg) ? '' : `<input data-kw class="edit-input" placeholder="${custom ? 'keywords, comma separated' : 'extra keywords, comma separated'}" value="${esc(extra)}">`}</td>
+        <td>${custom ? '<button class="btn small" data-del>Remove</button>' : ''}</td></tr>`; }).join('');
+    box.innerHTML = `<div class="modal-box bset"><h3>Buyer list</h3>
+      <p class="sec-note">A buyer's quantity is counted under the name that matches best. Add a new buyer, move one between IN HOUSE and SUB CONTRACT, or give a buyer more spellings. The built-in list is not changed; use “Reset my changes” to go back to it.</p>
+      <div class="bset-add"><input id="bsName" class="edit-input" placeholder="New buyer name"><select id="bsGrp" class="edit-input"><option value="IN">IN HOUSE</option><option value="SUB">SUB CONTRACT</option></select><input id="bsKw" class="edit-input" placeholder="Keywords (optional, comma separated; the name is used if empty)"><button class="btn small primary" id="bsAdd">Add buyer</button></div>
+      <input id="bsFind" class="edit-input" placeholder="Search buyers" style="margin:10px 0;width:100%">
+      <div class="tscroll bset-list"><table class="entry-table"><thead><tr><th>BUYER</th><th>GROUP</th><th>KEYWORDS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="modal-actions"><button class="btn small" id="bsReset">Reset my changes</button><button class="btn small primary" id="bsDone">Done</button></div></div>`;
+    const commit = () => { persistBuyers(); if(dashboard.style.display !== 'none') render(aggregate()); };
+    $('bsDone').onclick = () => { box.style.display = 'none'; };
+    $('bsFind').oninput = e => { const q = e.target.value.trim().toUpperCase(); box.querySelectorAll('tbody tr').forEach(tr => { tr.style.display = !q || tr.dataset.n.toUpperCase().includes(q) ? '' : 'none'; }); };
+    $('bsAdd').onclick = () => {
+      const name = $('bsName').value.trim().toUpperCase(); if(!name){ toast('Type the buyer name first', 'err'); return; }
+      if(effectiveRules().some(r => r.name.toUpperCase() === name)){ toast('That buyer is already in the list', 'err'); return; }
+      STATE.custom.added.push({name, grp:$('bsGrp').value, keys: kwList($('bsKw').value).length ? kwList($('bsKw').value) : [name]});
+      commit(); draw(); toast('Added ' + name);
+    };
+    $('bsReset').onclick = async () => { const ok = await askModal({title:'Reset buyer list', body:'<p>Remove all buyers you added and all changes you made to the list?</p>', ok:'Reset'}); if(!ok){ buyerSettings(); return; } STATE.custom = {added:[], grp:{}, keys:{}}; commit(); buyerSettings(); };
+    box.querySelectorAll('tbody tr').forEach(tr => {
+      const n = tr.dataset.n, mineB = STATE.custom.added.find(b => b.name === n), base = RULES.find(x => x.name === n);
+      tr.querySelector('[data-grp]').onchange = e => { if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ STATE.assign[n] = e.target.value; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(x){} } else if(mineB) mineB.grp = e.target.value; else if(base && e.target.value === base.grp) delete STATE.custom.grp[n]; else STATE.custom.grp[n] = e.target.value; commit(); draw(); };
+      const kw = tr.querySelector('[data-kw]'); if(kw) kw.onchange = e => { const k = kwList(e.target.value);
+        if(mineB) mineB.keys = k.length ? k : [n]; else if(k.length) STATE.custom.keys[n] = k; else delete STATE.custom.keys[n]; commit(); draw(); };
+      const del = tr.querySelector('[data-del]'); if(del) del.onclick = () => { STATE.custom.added = STATE.custom.added.filter(b => b.name !== n); commit(); draw(); };
+    });
+  };
+  draw();
+}
+$('buyerListBtn').addEventListener('click', buyerSettings);
+
+
+/* ============================================================
+   SEND TO GOOGLE — posts every day of the main file to your Apps Script web app,
+   which writes the monthly Google Sheet and answers with anything that does not match.
+   Works on the GitHub page / a local file (the claude.ai page blocks outside connections).
+   ============================================================ */
+const GCFG = () => { try{ return JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){ return {}; } };
+async function googleSetup(){
+  const g = GCFG();
+  const ok = await askModal({title:'Google link', ok:'Save', body:`<p>Paste the web app link of your Apps Script and the same secret word you wrote in the script (<b>KEY</b>). They stay in this browser only.</p>
+    <label class="sec-note">Web app link</label><input id="gUrl" class="edit-input" style="width:100%;margin-bottom:8px" value="${esc(g.url||'')}" placeholder="https://script.google.com/macros/s/.../exec">
+    <label class="sec-note">Secret word (KEY)</label><input id="gKey" class="edit-input" style="width:100%" value="${esc(g.key||'')}">`});
+  if(!ok) return false;
+  const url = $('gUrl').value.trim(), key = $('gKey').value.trim();
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)){ toast('That is not a web app link ending in /exec', 'err'); return false; }
+  try{ localStorage.setItem('frr_google', JSON.stringify({url, key})); }catch(e){}
+  return true;
+}
+function gRow(r){
+  const q = r.flagged ? String(r.qtyRaw) : (r.qty === null || r.qty === undefined ? '' : r.qty);
+  return [r.mc, r.cap ?? '', r.buyer, r.order, r.batch, r.color, r.fabric, q, r.loadTime, r.unloadTime, r.duration, r.rft, r.category, r.shade];
+}
+async function sendToGoogle(){
+  if(busy || !STATE.main) return;
+  let g = GCFG();
+  if(!g.url){ if(!await googleSetup()) return; g = GCFG(); }
+  busy = true; const btn = $('gBtn'), old = btn.textContent;
+  const items = [];
+  STATE.main.days.forEach(d => [1,2].forEach(u => {
+    const rows = d.iso === STATE.reportIso ? dayRowsOf(u, d.iso) : d.entries.filter(e => e.unit === u);
+    const s = summarize(rows, u); if(!s.hasData) return;
+    items.push({unit:u, iso:d.iso, sum:{prod:s.B, color:s.C, dpd:s.D, ww:s.F, reproc:reprocFor(u, d.iso, s.Hauto), sample:s.J, ok:s.ok}, rows:rows.map(gRow)});
+  }));
+  const problems = [], changed = []; let sent = 0, unconfirmed = false;
+  try{
+    for(let i = 0; i < items.length; i += 4){
+      btn.textContent = 'Sending ' + Math.min(i + 4, items.length) + ' of ' + items.length + '...';
+      const batch = items.slice(i, i + 4);
+      const res = await fetch(g.url, {method:'POST', body:JSON.stringify({key:g.key, items:batch}), redirect:'follow'});
+      let j = null; try{ j = await res.json(); }catch(e){ unconfirmed = true; }
+      if(j){ if(j.error){ throw new Error(j.error); } (j.problems||[]).forEach(p => problems.push(p)); (j.changed||[]).forEach(p => changed.push(p)); }
+      sent += batch.length;
+    }
+    const lines = [...changed.map(x => '<li><b>Changed:</b> ' + esc(x) + '</li>'), ...problems.map(x => '<li>' + esc(x) + '</li>')];
+    await askModal({title:'Sent to Google', ok:'OK', cancel:null, body:`<p>${sent} unit-days sent to your monthly Google Sheet${unconfirmed ? ' (Google did not send back a confirmation, so open the sheet to check)' : ''}.</p>` +
+      (lines.length ? '<p>These do not match or changed:</p><ul>' + lines.join('') + '</ul>' : (unconfirmed ? '' : '<p>Everything matches what was stored.</p>'))});
+  }catch(e){
+    console.error(e);
+    toast('Could not send to Google: ' + (e && e.message || e) + (/Failed to fetch|NetworkError/i.test(String(e && e.message)) ? ' (this works on the GitHub page, not on the claude.ai page)' : ''), 'err');
+  }finally{ busy = false; btn.textContent = old; }
+}
+$('gBtn').addEventListener('click', sendToGoogle);
+$('gSetBtn').addEventListener('click', googleSetup);
+
+</script>
+
+</body>
+</html>
