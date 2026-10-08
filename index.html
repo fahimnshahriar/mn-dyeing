@@ -2077,36 +2077,17 @@ $('buyerListBtn').addEventListener('click', buyerSettings);
    which writes the monthly Google Sheet and answers with anything that does not match.
    Works on the GitHub page / a local file (the claude.ai page blocks outside connections).
    ============================================================ */
-// The web app link alone is harmless (the script refuses every request without the KEY), so it is built in here.
-// Fill it once and every browser/device starts with it already typed. The KEY is never stored in this file.
+// The web app link is built in, so every browser/device starts with it already filled in. Change it here if you redeploy the script.
 const GOOGLE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbyAEVk2bXeucixnlWDaDqDJ6Oq8SGMR4hLUFaQlx5c67u8ZOQJ9bjtFAYcVgzDJDJ7d/exec';
-const GCFG = () => { let o = {}; try{ o = JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){} return {url: o.url || GOOGLE_DEFAULT_URL, key: o.key || ''}; };
-// Setup link: open  <page>#g=<code>  once on a new phone/PC and the link + KEY are saved there. The code is removed from the address bar.
-const gCode = g => btoa(unescape(encodeURIComponent(JSON.stringify({url:g.url, key:g.key}))));
-(function applySetupLink(){
-  const m = /[#&]g=([^&]+)/.exec(location.hash || ''); if(!m) return;
-  try{
-    const o = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));
-    if(o && o.key){ localStorage.setItem('frr_google', JSON.stringify({url:o.url || GOOGLE_DEFAULT_URL, key:o.key})); setTimeout(() => toast('Google link and KEY saved in this browser'), 300); }
-  }catch(e){}
-  try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
-})();
-function copySetupLink(){
-  const url = $('gUrl').value.trim(), key = $('gKey').value.trim();
-  if(!url || !key){ toast('Type the link and KEY first', 'err'); return; }
-  const full = location.origin + location.pathname + '#g=' + encodeURIComponent(gCode({url, key}));
-  (navigator.clipboard ? navigator.clipboard.writeText(full) : Promise.reject()).then(() => toast('Setup link copied. Open it once on each phone/PC. Keep it private.'), () => { prompt('Copy this setup link:', full); });
-}
+const GCFG = () => { let o = {}; try{ o = JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){} return {url: o.url || GOOGLE_DEFAULT_URL}; };
 async function googleSetup(){
   const g = GCFG();
-  const ok = await askModal({title:'Google link', ok:'Save', body:`<p>Paste the web app link of your Apps Script and the same secret word you wrote in the script (<b>KEY</b>). They stay in this browser only.</p>
-    <label class="sec-note">Web app link</label><input id="gUrl" class="edit-input" style="width:100%;margin-bottom:8px" value="${esc(g.url||'')}" placeholder="https://script.google.com/macros/s/.../exec">
-    <label class="sec-note">Secret word (KEY)</label><input id="gKey" class="edit-input" style="width:100%" value="${esc(g.key||'')}">
-    <p style="margin-top:10px"><button type="button" class="btn small" onclick="copySetupLink()">Copy setup link for other devices</button></p>`});
+  const ok = await askModal({title:'Google link', ok:'Save', body:`<p>Web app link of your Apps Script. It is already built in; change it only if you redeployed the script.</p>
+    <input id="gUrl" class="edit-input" style="width:100%" value="${esc(g.url||'')}" placeholder="https://script.google.com/macros/s/.../exec">`});
   if(!ok) return false;
-  const url = $('gUrl').value.trim(), key = $('gKey').value.trim();
+  const url = $('gUrl').value.trim();
   if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)){ toast('That is not a web app link ending in /exec', 'err'); return false; }
-  try{ localStorage.setItem('frr_google', JSON.stringify({url, key})); }catch(e){}
+  try{ localStorage.setItem('frr_google', JSON.stringify({url})); }catch(e){}
   return true;
 }
 function gRow(r){
@@ -2116,7 +2097,7 @@ function gRow(r){
 async function sendToGoogle(){
   if(busy || !STATE.main) return;
   let g = GCFG();
-  if(!g.url || !g.key){ if(!await googleSetup()) return; g = GCFG(); }
+  if(!g.url){ if(!await googleSetup()) return; g = GCFG(); }
   busy = true; const btn = $('gBtn'), old = btn.textContent;
   const items = [];
   STATE.main.days.forEach(d => [1,2].forEach(u => {
@@ -2129,7 +2110,7 @@ async function sendToGoogle(){
     for(let i = 0; i < items.length; i += 4){
       btn.textContent = 'Sending ' + Math.min(i + 4, items.length) + ' of ' + items.length + '...';
       const batch = items.slice(i, i + 4);
-      const res = await fetch(g.url, {method:'POST', body:JSON.stringify({key:g.key, items:batch}), redirect:'follow'});
+      const res = await fetch(g.url, {method:'POST', body:JSON.stringify({items:batch}), redirect:'follow'});
       let j = null; try{ j = await res.json(); }catch(e){ unconfirmed = true; }
       if(j){ if(j.error){ throw new Error(j.error); } (j.problems||[]).forEach(p => problems.push(p)); (j.changed||[]).forEach(p => changed.push(p)); }
       sent += batch.length;

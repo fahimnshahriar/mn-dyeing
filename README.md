@@ -31,8 +31,8 @@ Files are saved with a normal browser download on GitHub Pages.
 SheetJS 0.18.5, xlsx-js-style 1.2.0, jsPDF 2.5.1, JSZip 3.10.1.
 
 ## Send to Google (GitHub Pages version)
-1. Paste `apps-script/FloorReports.gs` into a new Apps Script project (script.google.com), add the **Drive API** service (v3), set `FOLDER_NAME`, `EMAIL` and your own `KEY` (a secret word) at the top.
+1. Paste `apps-script/FloorReports.gs` into a new Apps Script project (script.google.com), add the **Drive API** service (v3), set `FOLDER_NAME`, `EMAIL` at the top.
 2. Deploy, New deployment, type **Web app**, Execute as **Me**, access **Anyone**. Copy the `/exec` link.
-3. Put your `/exec` link in `GOOGLE_DEFAULT_URL` near the end of `index.html` (the link alone is harmless, the script refuses requests without the KEY). Then on the page press **Google link**, type the KEY once and press **Copy setup link for other devices**. Open that setup link once on every other phone/PC and the link and KEY are saved there. Keep the setup link private, it contains the KEY.
+3. Put your `/exec` link in `GOOGLE_DEFAULT_URL` near the end of `index.html`. Nothing needs to be typed on the page or on other devices.
 4. Load the main file and press **Send to Google**. Every day of the file is written to the monthly Google Sheet (`FLOOR REPORT OCT 2026`) and the page lists anything that does not match what was stored before.
-Do not put the KEY in the repository.
+The script has no password: anyone who has the `/exec` link can send data to your sheet, so do not share the link publicly.
