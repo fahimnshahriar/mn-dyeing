@@ -65,3 +65,17 @@ In the "not recognised" box (and the Problems window) the option **Wrong spellin
 
 ## Check entry
 The `#` of a row turns green when it is a production batch (has a batch number and a quantity, not a sample / wash line, not in brackets).
+
+## Reprocess
+- Counted from batches whose status is **R/M, RM, R.M or Rematch** (not R/W or other statuses).
+- Counted automatically **only for the newest day** (today). Older days are not recounted: they keep what was stored in Google (or 0 if nothing was stored), and sending never overwrites a stored value for them.
+- A figure you type in the Month report (REPROCESS box) is **kept**: it is saved with your other fixes, shared between devices, and never recounted. Clear the box to go back to counting.
+- After pasting the new `FloorReports.gs`, redeploy it as a **New version**.
+
+## Added in this version
+- **Actual file, Unit 1 + 2 combined · .xlsx**: one Sheet1 with every row of the day (UNIT column added), CATEGORY and BATCHMC tabs for each unit, and a TOTAL U1+2 tab. It is also inside the "Everything" zip.
+- **Reprocess report · .xlsx**: every R/M batch of the loaded month up to the report day, both units (date, unit, MC, buyer, colour, batch, qty...), plus a BY DAY tab with kg per day. Also inside the "Everything" zip.
+- The Category report · .xlsx export was removed (the .png stays).
+- Every warning (Needs a look, Problems window, export stop, the Google mail) starts with **date, MC, buyer, colour, batch number**. The long-duration (18h+) warning now shows them too.
+- **Check entry** fits one screen width: narrow fixed columns, the batch number column is just wide enough for 8 digits, Fabric and Check wrap. On a narrow phone it scrolls sideways.
+- After pasting the new `FloorReports.gs`, redeploy it as a **New version** (the duplicate-batch message now names MC, buyer and colour).

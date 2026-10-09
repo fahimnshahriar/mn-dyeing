@@ -347,6 +347,15 @@ table.entry-table td.n{text-align:right;font-family:'IBM Plex Mono',monospace;}
 table.entry-table td.rn{color:var(--ink-dim);text-align:center;background:var(--bg2);}
 table.entry-table td.c{text-align:center;font-weight:600;}
 table.entry-table td.chk{white-space:normal;min-width:220px;color:#E6B29F;}
+/* Check entry: everything on one page width. Batch number gets just enough room for 8 digits (e.g. 26016222). */
+table.entry-grid{table-layout:fixed;width:100%;min-width:0;font-size:11px;}
+table.entry-grid th{padding:4px 3px;font-size:9.5px;letter-spacing:0;white-space:normal;}
+table.entry-grid td{padding:3px 3px;white-space:normal;word-break:break-word;line-height:1.25;}
+table.entry-grid .ent-in{min-width:0;width:100%;padding:2px 3px;font-size:11px;box-sizing:border-box;}
+table.entry-grid td.chk{min-width:0;}
+table.entry-grid td.batchc,table.entry-grid td.batchc .ent-in{font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;white-space:nowrap;}
+.tscroll:has(table.entry-grid){overflow-x:auto;}
+table.entry-grid{min-width:880px;}
 table.entry-table tr.bad td:not(.chk):not(.rn){background:rgba(201,106,78,.10);}
 table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:700;}
 .okc{color:var(--teal);font-weight:600;} .badc{color:#E6B29F;font-weight:600;}
@@ -417,9 +426,11 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
       <div class="act-title" id="actTitle"></div>
       <div class="act-row">
         <button class="btn small primary" id="actualBtn">Actual file · .xlsx</button>
+        <button class="btn small primary" id="actualBothBtn">Actual file, Unit 1 + 2 combined · .xlsx</button>
         <button class="btn small primary" id="exportBtn">Final file · .xlsx</button>
         <button class="btn small" id="pngBtn">Buyer report · .png</button>
         <button class="btn small" id="catBothPngBtn">Category report, Unit 1 + 2 · .png</button>
+        <button class="btn small" id="reprocBtn">Reprocess report · .xlsx</button>
         <button class="btn small primary" id="msgBtn">Message for the boss · copy</button>
         <button class="btn small" id="pngBothBtn">Buyer report, Unit 1 + 2 combined · .png</button>
         <button class="btn small" id="pngMcBtn">MC report · .png</button>
@@ -967,7 +978,7 @@ function aggregate(){
   const nextDay = parsed.filter(r => r.unloadTime && r.unloadTime.toUpperCase().indexOf('NEXT') !== -1)
     .map(r => ({id:r.id, MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', COLOR:r.color||'—', LOAD:r.loadTime||'—', DATE:r.date}));
   const longDuration = parsed.filter(r => (parseDurationHours(r.duration)||0) > 18)
-    .map(r => ({MC:r.mc, BUYER:r.buyer||'—', LOAD:r.loadTime||'—', UNLOAD:r.unloadTime||'—', DURATION:r.duration, DATE:r.date}));
+    .map(r => ({MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', COLOR:r.color||'—', LOAD:r.loadTime||'—', UNLOAD:r.unloadTime||'—', DURATION:r.duration, DATE:r.date}));
   const flaggedRows = flagged.map(r => ({
     MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', COLOR:r.color||'—', QTY: r.qty, RFT:r.rft||'—', CATEGORY:r.category||'—', DATE:r.date }));
 
@@ -977,9 +988,9 @@ function aggregate(){
     rftRate: prod.length ? +(rftOkCount/prod.length*100).toFixed(1) : 0,
     flaggedCount: flagged.length, flaggedQty: flagged.reduce((s,r)=>s+r.qty,0),
     machines, buyers, report, categories, rft,
-    badUnitRows: STATE.parsed.filter(r => r.unit===0).map(r => ({MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', QTY:r.qty??'—', DATE:r.date})),
+    badUnitRows: STATE.parsed.filter(r => r.unit===0).map(r => ({MC:r.mc, BUYER:r.buyer||'—', BATCH:r.batch||'—', COLOR:r.color||'—', QTY:r.qty??'—', DATE:r.date})),
     unmappedRows: report.unmapped.map(r => ({MC:r.mc, BUYER:r.buyer||'—', ORDER:r.order||'—', BATCH:r.batch||'—', COLOR:r.color||'—', QTY:r.qty, DATE:r.date})),
-    overlapRows: report.overlaps.map(r => ({MC:r.mc, BUYER:r.buyer, BATCH:r.batch||'—', CHOSEN:r.chosen, QTY:r.qty, DATE:r.date})),
+    overlapRows: report.overlaps.map(r => ({MC:r.mc, BUYER:r.buyer, BATCH:r.batch||'—', COLOR:r.color||'—', CHOSEN:r.chosen, QTY:r.qty, DATE:r.date})),
     flaggedRows, missingCategory, wrongCategory, nextDay, longDuration
   };
 }
@@ -1221,8 +1232,9 @@ function render(d){
   // ---- needs a look ----
   const groups = document.getElementById('flagGroups');
   groups.innerHTML = '';
-  const dateCol = d.multiDate ? {key:'DATE', label:'Date', mono:true} : null;
-  const withDate = cols => dateCol ? [...cols, dateCol] : cols;
+  /* every warning starts with the five facts that identify a batch: date, MC, buyer, colour, batch number */
+  const withDate = cols => { const rest = cols.filter(c => !['DATE','MC','BUYER','COLOR','BATCH'].includes(c.key));
+    return [{key:'DATE',label:'Date',mono:true},{key:'MC',label:'MC',mono:true},{key:'BUYER',label:'Buyer'},{key:'COLOR',label:'Colour',colour:true},{key:'BATCH',label:'Batch',mono:true}, ...rest]; };
 
   addGroup(groups, 'Machine number outside both units',
     'Unit 1 = MC 1–23, Unit 2 = MC 101–106. These rows belong to neither report until the MC number is fixed in the sheet.',
@@ -1232,7 +1244,7 @@ function render(d){
     d.unmappedRows, withDate([{key:'MC',label:'MC',mono:true},{key:'BATCH',label:'Batch',mono:true},{key:'BUYER',label:'Buyer'},{key:'ORDER',label:'Order'},{key:'COLOR',label:'Colour',colour:true},{key:'QTY',label:'Qty (kg)',mono:true}]));
   addGroup(groups, 'Buyer name fits two buyers — counted once, please check',
     'The buyer name on these batches contains two buyer names (for example ZXY and ZXY GILDEN). Each batch is counted only once, under the longest matching name shown in "Counted under". Nothing is double counted.',
-    d.overlapRows, withDate([{key:'MC',label:'MC',mono:true},{key:'BATCH',label:'Batch',mono:true},{key:'BUYER',label:'Buyer on the sheet'},{key:'CHOSEN',label:'Counted under'},{key:'QTY',label:'Qty (kg)',mono:true}]));
+    d.overlapRows, withDate([{key:'MC',label:'MC',mono:true},{key:'BATCH',label:'Batch',mono:true},{key:'CHOSEN',label:'Counted under'},{key:'QTY',label:'Qty (kg)',mono:true}]));
   addGroup(groups,
     'Bracketed batches — not counted in totals',
     `The batch number or the QTY cell has "(" or ")" around it. That's the sheet's own marker for a batch not yet finished, so it's held out of the ${fmt(d.totalQty)} kg total above.`,
@@ -1319,7 +1331,7 @@ function addGroup(container, title, why, rows, cols, editCol){
       const td = document.createElement('td');
       td.className = (c.mono ? 'mono ' : '') + (c.colour ? 'colour-cell' : '');
       let val = r[c.key];
-      if(typeof val === 'number') val = fmt(val);
+      if(typeof val === 'number' && !['BATCH','MC','ORDER'].includes(c.key)) val = fmt(val);   // batch / MC numbers are identifiers, no thousands commas
       td.textContent = (val===undefined||val===null||val==='') ? '—' : val;
       tr.appendChild(td);
     });
@@ -1354,6 +1366,7 @@ const UNIT_CFG = {
   2: {lo:101, hi:106, list:[101,102,103,104,105,106], skip:[], sample:'SAMPLE2'}
 };
 const TARGET_BATCH = 2.5;
+const isRM = v => /^(R\s*[\/.\-]?\s*M|RE[\s\-]?MATCH)\b/i.test(String(v||'').trim());   // R/M, RM, R.M, R M, Rematch
 const WWK = ['WHITE','WASH','SCOURING','RFD'];
 const hasCat = (r, keys) => { const c = (r.category||'').toUpperCase(); return keys.some(k => c.includes(k)); };
 const sumQty = a => a.reduce((s,r) => s + r.qty, 0);
@@ -1370,7 +1383,7 @@ function summarize(rows, u){
   const F = sumQty(mcRows.filter(r => hasCat(r,WWK)));
   const B = sumQty(mcRows) + J;
   // REPROCESS = R/M batches of this unit, bracketed (unfinished) quantities included
-  const Hauto = rows.filter(r => r.mc && inRange(r) && /^(R\/M|R\.M|RM)$/i.test((r.rft||'').trim())).reduce((s,r) => s + (r.qty||0), 0);
+  const Hauto = rows.filter(r => r.mc && inRange(r) && isRM(r.rft)).reduce((s,r) => s + (r.qty||0), 0);
   const machines = cfg.list.map(mc => {
     const rr = mcRows.filter(r => String(r.mc).trim() === String(mc));
     const capRow = rows.find(r => String(r.mc).trim() === String(mc) && r.cap);
@@ -1388,7 +1401,25 @@ const reportLabel = () => /^\d{4}-/.test(STATE.reportIso) ? labelOf(STATE.report
 const dayRowsOf = (u, iso) => STATE.parsed.filter(r => r.unit === u && r.iso === iso);
 const reportRows = u => dayRowsOf(u, STATE.reportIso);
 const reprocKey = (u, iso) => 'u' + u + '_' + iso;
-const reprocFor = (u, iso, auto) => STATE.reproc[reprocKey(u,iso)] !== undefined ? STATE.reproc[reprocKey(u,iso)] : auto;
+/* REPROCESS (kg of R/M batches):
+   1. a figure you typed is always kept (saved with your other fixes, shared between devices) and never recounted;
+   2. otherwise it is counted from the R/M batches ONLY for the newest day loaded (today);
+   3. older days are not recounted: they keep what was stored in Google, or 0 when nothing was stored. */
+const manualReproc = (u, iso) => { const m = STATE.fixes['rm_' + reprocKey(u, iso)]; return m !== undefined ? m : STATE.reproc[reprocKey(u, iso)]; };
+function newestDayIso(){
+  let best = '';
+  const take = iso => { if(iso && iso > best) best = iso; };
+  if(STATE.main) STATE.main.days.forEach(d => { if(d.entries.some(e => e.qty !== null && e.qty !== undefined)) take(d.iso); });
+  STATE.parsed.forEach(r => take(r.iso));
+  return best || STATE.reportIso;
+}
+function reprocFor(u, iso, auto, unknown = 0){
+  const m = manualReproc(u, iso); if(m !== undefined) return m;
+  const h = STATE.hist[reprocKey(u, iso)];
+  if(STATE.viewOnly && h) return h.H;
+  if(iso === newestDayIso()) return auto;
+  return h ? h.H : unknown;
+}
 
 function figuresFor(u, k){
   const mk = (x, src) => ({iso:k, B:x.B, C:x.C, D:x.D, F:x.F, H:x.H, J:x.J, ok: x.C+x.D+x.F+x.J === x.B, src});
@@ -1409,7 +1440,7 @@ function uncatBatches(u, iso){
   const cfg = UNIT_CFG[u], WW = WWK;
   return dm.entries.filter(e => e.unit === u && e.mc && !e.flagged && !/[()]/.test(e.batch||'') && e.qty !== null && !/SAMPLE/i.test(e.mc) && /^\d+$/.test(String(e.mc).trim()) && +e.mc >= cfg.lo && +e.mc <= cfg.hi
     && !hasCat(e,['COLOR']) && !hasCat(e,['DPD']) && !hasCat(e,WW))
-    .map(e => 'batch ' + (e.batch||'—') + ' (MC ' + e.mc + ', ' + (e.color||'—') + ', ' + n0(e.qty) + ' kg, category "' + (e.category||'blank') + '")');
+    .map(e => labelOf(iso) + ' · MC ' + e.mc + ' · ' + (e.buyer||'—') + ' · ' + (e.color||'—') + ' · batch ' + (e.batch||'—') + ' · ' + n0(e.qty) + ' kg · category "' + (e.category||'blank') + '"');
 }
 function monthReport(u){
   const iso = STATE.reportIso;
@@ -1446,7 +1477,7 @@ function renderFinal(){
       return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td>${cell('B')}${cell('C')}${cell('D')}<td>${pct(x.D,x.B,1)}</td>${cell('F')}<td>${pct(x.F,x.B,2)}</td>${cell('H')}<td>${pct(x.H,x.B,2)}</td>${cell('J')}
         <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${fixed ? ' <button class="btn small" data-reset="' + iso + '">Undo my fix</button>' : ''}</td></tr>`; }
     const fixBtn = (!x.ok && STATE.main && STATE.main.dayMap[iso] && !today && !STATE.viewOnly) ? ` <button class="btn small" data-fixday="${iso}">Fix the batches</button>` : '';
-    const h = (today && !fixed) ? `<input class="edit-input ct-in" id="reprocInput"${STATE.viewOnly ? ' disabled' : ''} type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M). Counted from the sheet, change it if yours differs">` : n0(x.H);
+    const h = (today && !fixed) ? `<input class="edit-input ct-in" id="reprocInput"${STATE.viewOnly ? ' disabled' : ''} type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M, RM or Rematch batches). Counted automatically for today only. Type your own figure and it is kept; clear the box to count again">` : n0(x.H);
     return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td><td>${n0(x.B)}</td><td>${n0(x.C)}</td><td>${n0(x.D)}</td><td>${pct(x.D,x.B,1)}</td>
       <td>${n0(x.F)}</td><td>${pct(x.F,x.B,2)}</td><td>${h}</td><td>${pct(x.H,x.B,2)}</td><td>${n0(x.J)}</td>
       <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${x.ok?'':' <span class="src bad">check</span>'}${fixBtn}</td></tr>`;
@@ -1496,8 +1527,8 @@ function renderFinal(){
   if(inp){
     inp.addEventListener('change', () => {
       const v = inp.value.trim();
-      if(v === '' || isNaN(+v)) delete STATE.reproc[key]; else STATE.reproc[key] = Math.max(0, Math.round(+v));
-      renderFinal();
+      if(v === '' || isNaN(+v)) delete STATE.fixes['rm_' + key]; else STATE.fixes['rm_' + key] = Math.max(0, Math.round(+v));   // kept, saved and shared like your other fixes
+      delete STATE.reproc[key]; persistBuyers(); renderFinal();
     });
   }
 }
@@ -1533,7 +1564,8 @@ function updateActions(){
   $('syncBtn').title = CAP.db ? 'Save every day of this main file to the online log, so others can open the earlier days' : 'The online log works on the published link.';
   $('saveDayBtn').title = CAP.db ? 'Save this day, both units, to the online history' : 'History is kept on the hosted page. Open the published link to use it.';
   [ 'actualBtn','exportBtn','pngBtn','pngMcBtn' ].forEach(id => $(id).disabled = !summarize(reportRows(u), u).hasData);
-  ['msgBtn','pngBothBtn','catBothPngBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
+  ['msgBtn','pngBothBtn','catBothPngBtn','actualBothBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
+  $('reprocBtn').disabled = !has.length || !/^\d{4}-/.test(STATE.reportIso);
 }
 
 /* ============================================================
@@ -1557,7 +1589,7 @@ async function exportGuard(u, silent){
   const rows = unitRows(u);
   const bad = rows.filter(r => { const x = unitOfMc(r.mc); return x!==null && x!==u; });
   if(bad.length){
-    await askModal({title:'Export stopped', body:'<p>'+bad.length+' row(s) have an MC number outside UNIT '+u+' (MC '+UNIT_RANGE[u]+'):</p><ul>'+bad.slice(0,10).map(r => '<li>MC '+esc(r.mc)+' · '+esc(r.buyer||'—')+' · '+esc(r.qty??'')+'</li>').join('')+'</ul>', ok:null, cancel:'Close'});
+    await askModal({title:'Export stopped', body:'<p>'+bad.length+' row(s) have an MC number outside UNIT '+u+' (MC '+UNIT_RANGE[u]+'):</p><ul>'+bad.slice(0,10).map(r => '<li>'+esc(r.date||labelOf(STATE.reportIso))+' · MC '+esc(r.mc)+' · '+esc(r.buyer||'—')+' · '+esc(r.color||'—')+' · batch '+esc(r.batch||'—')+' · '+esc(r.qty??'')+' kg</li>').join('')+'</ul>', ok:null, cancel:'Close'});
     return false;
   }
   if(silent) return true;
@@ -1651,16 +1683,16 @@ async function buildFinalXlsx(u){
 }
 
 /* ---------- ACTUAL file (ACTUAL FLOOR REPORT: Sheet1 / CATEGORY / BATCHMC) ---------- */
-function buildActualXlsx(u){
+function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both units (combined file)
   const iso = STATE.reportIso, [Y,Mo,Dd] = iso.split('-').map(Number), cfg = UNIT_CFG[u];
-  const rows = actualRows(u), sm = summarize(reportRows(u), u), mr = monthReport(u);
-  const R = Math.max(300, rows.length + 100);                 // formula range end on Sheet1
+  const rows = ctx ? ctx.rows : actualRows(u), sm = summarize(reportRows(u), u), mr = monthReport(u);
+  const R = ctx ? ctx.R : Math.max(300, rows.length + 100);                 // formula range end on Sheet1
   const rng = c => `Sheet1!$${c}$4:$${c}$${R}`;
   const NC = NOCACHE();
   const fcell = (f, v, z) => { const o = NC ? {t:'n', f} : {t:typeof v==='string'?'s':'n', f, v}; if(z) o.z = z; return o; };
 
   /* --- Sheet1: the day's rows exactly as typed (brackets stay, so unfinished batches stay out of the totals) --- */
-  const ws1 = {}, H1 = ['DATE','MACHINE','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRICATION','QTY(KG(','LOAD TIME','UNLOAD TIME','DURATION','RFT','CATEGORY','SHADE'];
+  const ws1 = {}, H1 = ['DATE','MACHINE','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRICATION','QTY(KG(','LOAD TIME','UNLOAD TIME','DURATION','RFT','CATEGORY','SHADE', ...(ctx ? ['UNIT'] : [])];
   ws1['A1'] = {t:'s', v:'DAILY ACTUAL PRODUCTION REPORT - ' + Y, s:{font:{name:'Calibri',sz:12,bold:true}}};
   H1.forEach((h,c) => ws1[XLSX.utils.encode_cell({r:2,c})] = {t:'s', v:h, s:cellStyle('DDEBF7',{b:1,sz:11})});
   const dateTxt = pad2(Dd)+'.'+pad2(Mo)+'.'+Y;
@@ -1678,9 +1710,10 @@ function buildActualXlsx(u){
     }
     [[9,r.loadTime],[10,r.unloadTime]].forEach(([c,v]) => { if(!v) return; const f = timeToCell(v); put(c, f === null ? {t:'s', v} : {t:'n', v:f, z:'h:mm AM/PM'}); });
     [[11,r.duration],[12,r.rft],[13,r.category],[14,r.shade]].forEach(([c,v]) => { if(v) put(c, {t:'s', v}); });
+    if(ctx) put(15, {t:'s', v:'UNIT ' + r.unit});
   });
-  ws1['!ref'] = 'A1:O' + (3 + rows.length);
-  ws1['!cols'] = [14.3,9,8,22.9,16.6,16,20,22,11.7,13,13.4,13,10,12.6,26].map(w => ({wch:w}));
+  ws1['!ref'] = 'A1:' + (ctx ? 'P' : 'O') + (3 + rows.length);
+  ws1['!cols'] = [14.3,9,8,22.9,16.6,16,20,22,11.7,13,13.4,13,10,12.6,26, ...(ctx ? [9] : [])].map(w => ({wch:w}));
 
   /* --- CATEGORY: month to date, earlier days as values, this day live from Sheet1 --- */
   const ws2 = {}, merges2 = [], S2 = (a, cell) => ws2[a] = cell, n = mr.n;
@@ -1785,6 +1818,7 @@ function buildActualXlsx(u){
   ws3['!ref'] = 'A1:I' + rs; ws3['!merges'] = merges3; ws3['!cols'] = wid.map(w => ({wch:w}));
   ws3['!rows'] = []; ws3['!rows'][r1-1] = {hpt:26};
 
+  if(ctx) return {ws1, ws2, ws3};
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws1, 'Sheet1'); XLSX.utils.book_append_sheet(wb, ws2, 'CATEGORY'); XLSX.utils.book_append_sheet(wb, ws3, 'BATCHMC');
   wb.Workbook = {CalcPr:{fullCalcOnLoad:true}};
@@ -1896,17 +1930,68 @@ function buildCategoryBothPng(){
   section(SEC1, false); y += GAP; section(SEC2, true); y += GAP; section(SEC3, true);
   return new Promise(res => cv.toBlob(b => res({name:'CATEGORY REPORT - '+fileDate()+' (UNIT-1+2).png', blob:b}), 'image/png'));
 }
-function buildCategoryBothXlsx(){
-  const d = categoryBothData();
-  const ws = XLSX.utils.aoa_to_sheet([[d.title],d.H,...d.body,d.foot]);
+/* ACTUAL file for Unit 1 + Unit 2 together: one Sheet1 with every row of the day (UNIT column added), then CATEGORY and BATCHMC
+   for each unit (their formulas read the shared Sheet1 by machine range), and a TOTAL tab with U1 + U2 side by side. */
+function buildActualBothXlsx(){
+  const us = [1,2].filter(u => summarize(reportRows(u), u).hasData);
+  const all = us.flatMap(u => actualRows(u)), R = Math.max(300, all.length + 100);
+  const parts = us.map(u => ({u, ...buildActualXlsx(u, {rows:all, R})}));
+  const [Y,Mo,Dd] = STATE.reportIso.split('-').map(Number);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, parts[0].ws1, 'Sheet1');
+  parts.forEach(p => { XLSX.utils.book_append_sheet(wb, p.ws2, 'CATEGORY U' + p.u); XLSX.utils.book_append_sheet(wb, p.ws3, 'BATCHMC U' + p.u); });
+  const d = categoryBothData(), ws = XLSX.utils.aoa_to_sheet([[d.title], d.H, ...d.body, d.foot]);
   const hs = cellStyle('D9E2F3',{b:1,sz:10,wrap:1});
   ws['A1'].s = cellStyle('A9D08E',{b:1,sz:12}); ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:10}}];
   d.H.forEach((h,c) => ws[XLSX.utils.encode_cell({r:1,c})].s = hs);
   [...d.body, d.foot].forEach((row,i) => row.forEach((v,c) => { const a = XLSX.utils.encode_cell({r:i+2,c}); const cell = ws[a] || (ws[a] = {t:'s',v:''}); cell.s = cellStyle(null,{b:1,sz:11}); }));
   ws['!cols'] = d.H.map((h,c) => ({wch: c===0 ? 12 : Math.max(9, h.length+2)}));
-  ws['!rows'] = [{hpt:22},{hpt:32}];
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'CATEGORY');
-  return {name:'CATEGORY REPORT - '+fileDate()+' (UNIT-1+2).xlsx', blob:aoaBlob(wb)};
+  XLSX.utils.book_append_sheet(wb, ws, 'TOTAL U1+2');
+  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}};
+  return {name:`ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-1+2).xlsx`, blob:aoaBlob(wb)};
+}
+
+/* REPROCESS report: every R/M batch (R/M, RM, R.M, Rematch) of the loaded days of the month up to the report day, both units.
+   Sheet REPROCESS = the batches (date, unit, MC, buyer, colour, batch first); sheet BY DAY = kg per day as the Month report shows it. */
+function reprocessRowsOf(u, iso){
+  const live = STATE.parsed.filter(r => r.iso === iso && r.unit === u);
+  const rows = live.length ? live : ((STATE.main && STATE.main.dayMap[iso]) ? STATE.main.dayMap[iso].entries.filter(e => e.unit === u) : []);
+  const cfg = UNIT_CFG[u];
+  return rows.filter(r => r.mc && /^\d+$/.test(String(r.mc).trim()) && +r.mc >= cfg.lo && +r.mc <= cfg.hi && isRM(r.rft));
+}
+function buildReprocessXlsx(){
+  const iso0 = STATE.reportIso; if(!/^\d{4}-\d\d-\d\d$/.test(iso0)) throw new Error('Pick a day first.');
+  const [y,m] = iso0.split('-').map(Number), n = daysInMonth(y,m), list = [], byDay = [];
+  for(let dd=1; dd<=n; dd++){ const iso = isoOf(y,m,dd); if(iso > iso0) break;
+    const row = {iso, kg:{}, cnt:{}, shown:{}};
+    [1,2].forEach(u => { const rr = reprocessRowsOf(u, iso); rr.forEach(r => list.push({iso, u, r}));
+      row.cnt[u] = rr.length; row.kg[u] = rr.reduce((t,r) => t + (r.qty||0), 0);
+      const fg = figuresFor(u, iso); row.shown[u] = fg && fg.src ? fg.H : null; });
+    byDay.push(row); }
+  if(!list.length && !byDay.some(r => r.shown[1] || r.shown[2])) throw new Error('No R/M batches found in the loaded days.');
+  const H = ['DATE','UNIT','MC','BUYER','COLOR','BATCH NO','ORDER','FABRIC','QTY (KG)','CATEGORY','LOAD TIME','UNLOAD TIME','DURATION','RFT'];
+  const aoa = [['REPROCESS (R/M) BATCHES - ' + MONTHS[m-1] + ' ' + y + ' (up to ' + labelOf(iso0) + ')'], H,
+    ...list.map(({iso, u, r}) => [labelOf(iso), 'UNIT ' + u, /^\d+$/.test(String(r.mc).trim()) ? +r.mc : r.mc, r.buyer||'', r.color||'', r.batch||'', r.order||'', r.fabric||'', r.qty ?? '', r.category||'', r.loadTime||'', r.unloadTime||'', r.duration||'', r.rft||''])];
+  const tot = list.reduce((t,x) => t + (x.r.qty||0), 0);
+  aoa.push(['TOTAL','','','','','','','', tot]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa), hs = cellStyle('D9E2F3',{b:1,sz:10,wrap:1}), last = aoa.length - 1;
+  ws['A1'].s = cellStyle('A9D08E',{b:1,sz:12}); ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:13}}];
+  H.forEach((h,c) => ws[XLSX.utils.encode_cell({r:1,c})].s = hs);
+  aoa.slice(2).forEach((row,i) => H.forEach((h,c) => { const a = XLSX.utils.encode_cell({r:i+2,c}); const cell = ws[a] || (ws[a] = {t:'s',v:''}); cell.s = cellStyle(i+2 === last ? 'D9D9D9' : null,{sz:11,b:i+2 === last}); }));
+  ws['!cols'] = [12,8,7,22,20,12,14,22,11,12,11,11,10,8].map(w => ({wch:w}));
+  const b2 = [['REPROCESS kg BY DAY - ' + MONTHS[m-1] + ' ' + y], ['DATE','UNIT 1 BATCHES','UNIT 1 KG','UNIT 2 BATCHES','UNIT 2 KG','TOTAL KG','MONTH REPORT SHOWS (U1 + U2)'],
+    ...byDay.map(x => [labelOf(x.iso), x.cnt[1], x.kg[1], x.cnt[2], x.kg[2], x.kg[1] + x.kg[2], (x.shown[1] === null && x.shown[2] === null) ? '' : (x.shown[1]||0) + (x.shown[2]||0)])];
+  const S = i => byDay.reduce((t,x) => t + (i===0 ? x.cnt[1] : i===1 ? x.kg[1] : i===2 ? x.cnt[2] : i===3 ? x.kg[2] : x.kg[1]+x.kg[2]), 0);
+  b2.push(['TOTAL', S(0), S(1), S(2), S(3), S(4), byDay.reduce((t,x) => t + (x.shown[1]||0) + (x.shown[2]||0), 0)]);
+  const w2 = XLSX.utils.aoa_to_sheet(b2); w2['A1'].s = cellStyle('A9D08E',{b:1,sz:12}); w2['!merges'] = [{s:{r:0,c:0},e:{r:0,c:6}}];
+  for(let c=0;c<7;c++) w2[XLSX.utils.encode_cell({r:1,c})].s = hs;
+  b2.slice(2).forEach((row,i) => row.forEach((v,c) => { const a = XLSX.utils.encode_cell({r:i+2,c}); const cell = w2[a] || (w2[a] = {t:'s',v:''}); cell.s = cellStyle(i+2 === b2.length-1 ? 'D9D9D9' : null,{sz:11,b:i+2 === b2.length-1}); }));
+  w2['!cols'] = [12,14,12,14,12,12,24].map(w => ({wch:w}));
+  const note = XLSX.utils.aoa_to_sheet([['The last column is what the Month report shows for that day. It differs from the batch list only when you typed your own REPROCESS figure, or the day was stored earlier.']]);
+  XLSX.utils.sheet_add_aoa(w2, [[], ['The last column is the figure the Month report uses. It differs from the batch list only if you typed your own REPROCESS figure, or the day was stored earlier.']], {origin:{r:b2.length, c:0}});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'REPROCESS'); XLSX.utils.book_append_sheet(wb, w2, 'BY DAY');
+  return {name:'REPROCESS REPORT - ' + fileDate() + ' (UNIT-1+2).xlsx', blob:aoaBlob(wb)};
 }
 /* ---------- the daily WhatsApp-style message, both units, ready to copy ---------- */
 function buildMessage(){
@@ -2022,6 +2107,12 @@ const bothRun = fn => async () => { if(busy) return; busy = true;
   catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
   finally{ busy = false; } };
 $('catBothPngBtn').addEventListener('click', bothRun(buildCategoryBothPng));
+$('actualBothBtn').addEventListener('click', async () => {
+  if(busy) return; aggregate();
+  for(const u of [1,2]) if(summarize(reportRows(u), u).hasData && !(await exportGuard(u, true))) return;
+  await bothRun(async () => buildActualBothXlsx())();
+});
+$('reprocBtn').addEventListener('click', bothRun(async () => buildReprocessXlsx()));
 $('pngBothBtn').addEventListener('click', async () => {
   if(busy) return; busy = true;
   try{ aggregate(); const f = await buildBuyerPngBoth(); await saveFile(f.name, f.blob); }
@@ -2038,7 +2129,7 @@ $('bothBtn').addEventListener('click', async () => {
   if(!window.JSZip){ toast('The zip library did not load. Export the files one by one.', 'err'); return; }
   const lines = todo.map(u => { const rows = unitRows(u); const mcs = [...new Set(rows.filter(r=>unitOfMc(r.mc)).map(r=>+r.mc))].sort((a,b)=>a-b); const sm = summarize(reportRows(u), u);
     return `<p><b>UNIT ${u}</b> (MC ${UNIT_RANGE[u]})<br>Machines: ${mcs.join(', ')}<br>Production: ${n0(sm.B)} kg · category check ${sm.ok ? '<span class="m-ok">OK</span>' : '<span class="m-bad">WRONG</span>'}</p>`; }).join('');
-  const go = await askModal({title:'Export everything · ' + reportLabel(), body: lines + '<p>One zip with, for each unit: actual file, final file, buyer picture, machine picture, plus the combined Unit 1 + 2 buyer and category reports.</p>' + (skipped.length ? '<p class="sec-note">UNIT ' + skipped.join(' and ') + ' has no rows, skipped.</p>' : ''), ok:'Export zip'});
+  const go = await askModal({title:'Export everything · ' + reportLabel(), body: lines + '<p>One zip with, for each unit: actual file, final file, buyer picture, machine picture, plus the combined Unit 1 + 2 actual file, buyer and category reports, and the reprocess report.</p>' + (skipped.length ? '<p class="sec-note">UNIT ' + skipped.join(' and ') + ' has no rows, skipped.</p>' : ''), ok:'Export zip'});
   if(!go) return;
   busy = true;
   try{
@@ -2048,7 +2139,8 @@ $('bothBtn').addEventListener('click', async () => {
       const folder = zip.folder('UNIT-' + u);
       for(const b of [buildActualXlsx, buildFinalXlsx, buildBuyerPng, buildMcPng]){ const f = await b(u); folder.file(f.name, f.blob); }
     }
-    for(const b of [buildBuyerPngBoth, buildCategoryBothPng]){ const f = await b(); zip.file(f.name, f.blob); }
+    for(const b of [buildBuyerPngBoth, buildCategoryBothPng, async () => buildActualBothXlsx()]){ const f = await b(); zip.file(f.name, f.blob); }
+    try{ const f = buildReprocessXlsx(); zip.file(f.name, f.blob); }catch(e){}   // no R/M batches loaded: simply no reprocess file
     zip.file('MESSAGE - '+fileDate()+'.txt', buildMessage());   // combined Unit 1 + 2 reports sit beside the UNIT folders
     const blob = await zip.generateAsync({type:'blob'});
     await saveFile('FINAL PACKAGE - ' + fileDate() + '.zip', blob);
@@ -2452,7 +2544,7 @@ function openProblems(){
   box.style.display = 'flex';
   const days = [...new Set(list.map(x => x.iso))];
   const unknownBuyers = new Map(); list.forEach(x => x.why.forEach(w => { if(/is not in the list/.test(w)){ const k = String(x.row.buyer).trim().toUpperCase(); unknownBuyers.set(k, (unknownBuyers.get(k)||0) + 1); } }));
-  const body = list.length ? days.map(iso => `<div class="prob-day"><b>${labelOf(iso)}</b>${list.filter(x => x.iso === iso).map(x => `<div class="prob-row"><span>UNIT ${x.unit} · MC ${esc(x.row.mc)} · batch ${esc(x.row.batch)} · ${esc(x.row.buyer||'—')} · ${esc(x.row.category||'—')} · ${n0(x.row.qty)} kg<br><small>${x.why.map(esc).join('; ')}</small></span><button class="btn small" data-go="${iso}" data-u="${x.unit}">Fix</button></div>`).join('')}</div>`).join('')
+  const body = list.length ? days.map(iso => `<div class="prob-day"><b>${labelOf(iso)}</b>${list.filter(x => x.iso === iso).map(x => `<div class="prob-row"><span>${labelOf(iso)} · UNIT ${x.unit} · MC ${esc(x.row.mc)} · ${esc(x.row.buyer||'—')} · ${esc(x.row.color||'—')} · batch ${esc(x.row.batch)} · ${esc(x.row.category||'—')} · ${n0(x.row.qty)} kg<br><small>${x.why.map(esc).join('; ')}</small></span><button class="btn small" data-go="${iso}" data-u="${x.unit}">Fix</button></div>`).join('')}</div>`).join('')
     : '<div class="empty">No buyer or category problems found in the loaded days of this month.</div>';
   const quick = unknownBuyers.size ? `<div class="prob-quick"><b>Buyer not in the list — add it, or choose the right buyer to correct my entries</b>${[...unknownBuyers].map(([k,c]) => `<div class="prob-row"><span>${esc(k)} <small>(${c} batch${c>1?'es':''})</small></span><span><button class="btn small" data-add="IN" data-n="${esc(k)}">Add as IN HOUSE</button> <button class="btn small" data-add="SUB" data-n="${esc(k)}">Add as SUB CONTRACT</button><br><select class="edit-input" data-same="${esc(k)}" style="margin-top:6px;max-width:220px"><option value="">Wrong spelling: change my entries to…</option>${effectiveRules().map(r => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}</select></span></div>`).join('')}</div>` : '';
   box.innerHTML = `<div class="modal-box bset"><h3>Problems this month · buyer or category wrong</h3><p class="sec-note">${list.length} batch${list.length===1?'':'es'} in ${days.length} day${days.length===1?'':'s'} (days loaded from the main file or on screen). Batches with no batch number or no quantity, and bracketed batches, are not counted as problems.</p>${quick}<div class="bset-list">${body}</div><div class="modal-actions"><button class="btn small primary" id="probClose">Close</button></div></div>`;
@@ -2508,14 +2600,15 @@ function renderEntry(){
   $('entryBadge').textContent = bad.length ? '(' + bad.length + ')' : '';
   const show = entryOnlyBad ? bad : rows;
   const H = ['#','M/C','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','CATEGORY','SHADE','LOAD','UNLOAD','RFT','CHECK'];
+  const W = ['26px','34px','38px','11%','8%','74px','10%','14%','46px','56px','46px','58px','58px','34px',''];   // CHECK takes what is left
   const ec = (r, f) => (r.xl && !STATE.viewOnly) ? `<input class="edit-input ent-in" data-id="${r.id}" data-f="${f}" value="${esc(r[f])}">` : esc(r[f]);
   const trs = show.map(r => { const p = iss.get(r), i = rows.indexOf(r) + 1;
-    return `<tr class="${p.length ? 'bad' : ''}"><td class="rn${isProdBatch(r) ? ' prodb' : ''}"${isProdBatch(r) ? ' title="production batch"' : ''}>${i}</td><td class="c">${esc(r.mc)}</td><td>${r.cap ? n0(r.cap) : ''}</td><td>${ec(r,'buyer')}</td><td>${ec(r,'order')}</td><td class="${/same batch|batch number/.test(p.join()) ? 'x' : ''}">${ec(r,'batch')}</td>
+    return `<tr class="${p.length ? 'bad' : ''}"><td class="rn${isProdBatch(r) ? ' prodb' : ''}"${isProdBatch(r) ? ' title="production batch"' : ''}>${i}</td><td class="c">${esc(r.mc)}</td><td>${r.cap ? n0(r.cap) : ''}</td><td>${ec(r,'buyer')}</td><td>${ec(r,'order')}</td><td class="batchc ${/same batch|batch number/.test(p.join()) ? 'x' : ''}">${ec(r,'batch')}</td>
       <td class="colour-cell">${esc(r.color)}</td><td>${esc(r.fabric)}</td><td class="n">${r.qty === null || r.qty === undefined ? '' : n0(r.qty)}</td><td>${ec(r,'category')}</td><td>${esc(r.shade)}</td><td>${ec(r,'loadTime')}</td><td>${ec(r,'unloadTime')}</td><td>${esc(r.rft)}</td>
       <td class="chk">${p.length ? p.map(esc).join('; ') : (/[()]/.test(r.batch||'') || r.flagged ? '<span class="opn">running (brackets), not counted</span>' : '<span class="okc">OK</span>')}</td></tr>`; }).join('');
   el.innerHTML = `<div class="hist-top"><span class="sec-note"><b>UNIT ${u}</b> · ${esc(reportLabel())} · ${rows.length} rows · ${bad.length ? '<span class="badc">' + bad.length + ' rows need a look (' + nIssues + ' problems)</span>' : '<span class="okc">every row looks complete</span>'}</span>
       <label class="daysel"><input type="checkbox" id="entryBad"${entryOnlyBad ? ' checked' : ''}> show problem rows only</label></div>
-    <div class="tscroll"><table class="entry-table"><thead><tr>${H.map(x => '<th>' + x + '</th>').join('')}</tr></thead><tbody>${trs || '<tr><td colspan="15" class="ct-none">No problems found.</td></tr>'}</tbody></table></div>`;
+    <div class="tscroll"><table class="entry-table entry-grid"><colgroup>${W.map(w => '<col' + (w ? ' style="width:' + w + '"' : '') + '>').join('')}</colgroup><thead><tr>${H.map(x => '<th>' + x + '</th>').join('')}</tr></thead><tbody>${trs || '<tr><td colspan="15" class="ct-none">No problems found.</td></tr>'}</tbody></table></div>`;
   $('entryBad').onchange = e => { entryOnlyBad = e.target.checked; renderEntry(); };
   el.querySelectorAll('.ent-in').forEach(inp => inp.onchange = () => commitEdit(Number(inp.dataset.id), inp.dataset.f, inp.value));
 }
@@ -2664,7 +2757,7 @@ async function sendToGoogle(){
   STATE.main.days.forEach(d => [1,2].forEach(u => {
     const rows = d.iso === STATE.reportIso ? dayRowsOf(u, d.iso) : d.entries.filter(e => e.unit === u);
     const s = summarize(rows, u); if(!s.hasData) return;
-    const it = {unit:u, iso:d.iso, sum:{prod:s.B, color:s.C, dpd:s.D, ww:s.F, reproc:reprocFor(u, d.iso, s.Hauto), sample:s.J, ok:s.ok}, rows:rows.map(gRow)};
+    const it = {unit:u, iso:d.iso, sum:{prod:s.B, color:s.C, dpd:s.D, ww:s.F, reproc:reprocFor(u, d.iso, s.Hauto, null), sample:s.J, ok:s.ok}, rows:rows.map(gRow)};
     it.h = hashOf({sum:it.sum, rows:it.rows}); items.push(it);
   }));
   // only days that are new or changed since the last send from this device go over the wire (this is what makes it fast)
