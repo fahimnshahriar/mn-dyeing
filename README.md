@@ -55,3 +55,13 @@ Buyers you add or correct in **Buyer list** (and the IN HOUSE / SUB answers) are
 - **Company logo:** put your logo file next to `index.html` and name it `logo.png`. It shows at the top left of the page (about 54 px high, smaller on phones). If the file is missing, nothing is shown.
 - **Floating Downloads button** (bottom right): opens "Final reports · download options" with all the export buttons, Send to Google and the corrected main file.
 - **Google link** is now a small "Settings · Google link" link at the very bottom of the page.
+
+## Faster Send to Google
+- Only days that are new or changed since the last send **from this device** are sent. If nothing changed, the page says so and offers "Send everything again".
+- The script remembers the Drive folder / monthly file, reads and writes each sheet once per request (no more row-by-row deleting), and caches the saved-days list for 2 minutes. After pasting the new `FloorReports.gs`, redeploy it as a **New version**.
+
+## Buyer not in the list
+In the "not recognised" box (and the Problems window) the option **Wrong spelling: change my entries to…** puts the chosen buyer into the entries themselves (also into the corrected main file) and remembers that spelling for the next load. It no longer adds a keyword. You can undo it in **Buyer list → Spelling corrections kept**.
+
+## Check entry
+The `#` of a row turns green when it is a production batch (has a batch number and a quantity, not a sample / wash line, not in brackets).

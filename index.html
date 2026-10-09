@@ -340,6 +340,7 @@ table.cat-table td .src{font-size:9.5px;padding:1px 5px;}
 /* check entry grid */
 table.entry-table{border-collapse:collapse;font-size:12px;min-width:100%;}
 table.entry-table th{background:rgba(95,168,160,.14);font-size:10.5px;letter-spacing:.03em;padding:6px 7px;border:1px solid var(--line);text-align:left;white-space:nowrap;position:sticky;top:0;}
+table.entry-table td.rn.prodb{background:rgba(95,168,160,.28);color:#8FE0D4;font-weight:600;}
 table.entry-table .ent-in{width:100%;min-width:70px;padding:3px 5px;font-size:12px;}
 table.entry-table td{padding:5px 7px;border:1px solid var(--line);white-space:nowrap;}
 table.entry-table td.n{text-align:right;font-family:'IBM Plex Mono',monospace;}
@@ -419,7 +420,6 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
         <button class="btn small primary" id="exportBtn">Final file · .xlsx</button>
         <button class="btn small" id="pngBtn">Buyer report · .png</button>
         <button class="btn small" id="catBothPngBtn">Category report, Unit 1 + 2 · .png</button>
-        <button class="btn small" id="catBothXlsxBtn">Category report, Unit 1 + 2 · .xlsx</button>
         <button class="btn small primary" id="msgBtn">Message for the boss · copy</button>
         <button class="btn small" id="pngBothBtn">Buyer report, Unit 1 + 2 combined · .png</button>
         <button class="btn small" id="pngMcBtn">MC report · .png</button>
@@ -478,8 +478,8 @@ try { STATE.assign = JSON.parse(localStorage.getItem('frr_assign') || '{}'); } c
 STATE.fixes = {};   // figures you typed over a day in the Month report: 'u1_2026-10-05' -> {B,C,D,F,H,J}
 try { STATE.fixes = JSON.parse(localStorage.getItem('frr_fixes') || '{}') || {}; } catch(e){}
 /* your own changes to the buyer list (kept apart from the built-in list): added buyers, IN/SUB switches, extra keywords */
-STATE.custom = {added:[], grp:{}, keys:{}, repl:{}, removed:[]};   // repl = keywords you typed in place of a built-in buyer's own; removed = built-in buyers you took out
-try { const c = JSON.parse(localStorage.getItem('frr_buyers') || 'null'); if(c) STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}, repl:c.repl||{}, removed:c.removed||[]}; } catch(e){}
+STATE.custom = {added:[], grp:{}, keys:{}, repl:{}, removed:[], rename:{}};   // repl = keywords you typed in place of a built-in buyer's own; removed = built-in buyers you took out
+try { const c = JSON.parse(localStorage.getItem('frr_buyers') || 'null'); if(c) STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}, repl:c.repl||{}, removed:c.removed||[], rename:c.rename||{}}; } catch(e){}
 function effectiveRules(){
   const R = RULES.filter(x => !STATE.custom.removed.includes(x.name)).map(x => ({...x, grp: STATE.custom.grp[x.name] || x.grp, keys: (!x.exact && STATE.custom.repl[x.name]) ? [...STATE.custom.repl[x.name]] : [...x.keys, ...(x.exact ? [] : (STATE.custom.keys[x.name]||[]))]}));
   STATE.custom.added.forEach(b => R.push({name:b.name, grp:b.grp, keys:[...b.keys], exact:false, custom:true}));
@@ -488,6 +488,25 @@ function effectiveRules(){
     else { const t = R.find(x => x.name===v.slice(6)); if(t) t.keys.push(name); }
   });
   return R;
+}
+/* Correct a wrong buyer spelling: the entries themselves get the chosen buyer (so it is also written into the corrected main file),
+   and the correction is remembered for the next time the same spelling shows up. */
+function buyerTextFor(rule){
+  const U = x => String(x||'').trim().toUpperCase();
+  const ok = rule.exact ? rule.keys.some(k => U(k) === U(rule.name)) : rule.keys.some(k => U(rule.name).includes(U(k)));
+  return ok ? rule.name : rule.keys[0];
+}
+function applyAllRenames(){
+  const map = STATE.custom.rename || {}; let n = 0;
+  const fix = e => { const t = map[String(e.buyer||'').trim().toUpperCase()]; if(t && e.buyer !== t){ e.buyer = t; n++; } };
+  if(STATE.main) STATE.main.days.forEach(d => d.entries.forEach(fix));
+  STATE.parsed.forEach(fix);
+  return n;
+}
+function renameBuyer(from, toName){
+  const rule = effectiveRules().find(r => r.name === toName); if(!rule) return 0;
+  STATE.custom.rename[String(from).trim().toUpperCase()] = buyerTextFor(rule);
+  return applyAllRenames();
 }
 let nextId = 0;
 let currentView = 'machine';
@@ -759,6 +778,7 @@ function makeEntries(rows, col, from, to, day, srcName, xl){
       date: day.label, iso: day.iso, sourceFile: srcName,
     };
     if(xl){ ent.xl = {sheet:xl.sheet, row:i + xl.r0 + 1, c0:xl.c0, col}; ent.orig = {buyer:ent.buyer, order:ent.order, batch:ent.batch, category:ent.category, loadTime:ent.loadTime, unloadTime:ent.unloadTime}; }
+    { const rn = (STATE.custom.rename || {})[ent.buyer.trim().toUpperCase()]; if(rn) ent.buyer = rn; }   // a spelling you corrected before is corrected in the entry again (the file's own value stays in orig)
     out.push(ent);
   }
   return out;
@@ -1148,14 +1168,16 @@ function render(d){
   rp.unmapped.filter(r => r.buyer && r.buyer.trim()).forEach(r => { const k = r.buyer.trim().toUpperCase(); const o = un.get(k) || {q:0, rows:[]}; o.q += r.qty; o.rows.push(r); un.set(k, o); });
   if(un.size){
     const opts = '<option value="">— choose —</option><option value="IN">Add as new IN HOUSE buyer</option><option value="SUB">Add as new SUB CONTRACT buyer</option>' +
-      '<optgroup label="Same buyer as…">' + RULES.filter(x => !STATE.custom.removed.includes(x.name)).map(x => `<option value="MERGE:${x.name}">${x.name}</option>`).join('') + '</optgroup>';
+      '<optgroup label="Wrong spelling: change my entries to…">' + effectiveRules().map(x => `<option value="RENAME:${esc(x.name)}">${esc(x.name)}</option>`).join('') + '</optgroup>';
     ab.innerHTML = `<div class="assign"><h3>${un.size} buyer${un.size>1?'s':''} not recognised — where should ${un.size>1?'they':'it'} go?</h3>
-      <p>These names match nothing in your CALCULATION list, so their kg is missing from the totals. Your answer is remembered for next time.</p>
+      <p>These names match nothing in your CALCULATION list, so their kg is missing from the totals. Choose a buyer from the list to correct the wrong spelling in your entries, or add the name as a new buyer. Your answer is remembered for next time.</p>
       ${[...un].map(([n,o],i) => `<div class="assign-row"><span>${n}<small class="un-b">${o.rows.map(r => 'Batch ' + esc(r.batch||'—') + ' · MC ' + esc(r.mc) + ' · ' + esc(r.color||'—') + ' · ' + fmt(r.qty) + ' kg').join('<br>')}</small></span><span class="mono">${fmt(o.q)} kg</span><select data-buyer="${n.replace(/"/g,'&quot;')}">${opts}</select></div>`).join('')}
       <div style="margin-top:12px"><button class="btn small primary" id="assignApply">Apply</button></div></div>`;
     document.getElementById('assignApply').addEventListener('click', () => {
-      ab.querySelectorAll('select').forEach(s => { if(s.value) STATE.assign[s.dataset.buyer] = s.value; });
+      let fixedN = 0;
+      ab.querySelectorAll('select').forEach(s => { if(!s.value) return; if(s.value.startsWith('RENAME:')) fixedN += renameBuyer(s.dataset.buyer, s.value.slice(7)); else STATE.assign[s.dataset.buyer] = s.value; });
       persistBuyers();
+      if(fixedN) toast(fixedN + ' entr' + (fixedN > 1 ? 'ies' : 'y') + ' changed. Use "Corrected main file" to save it into your file.');
       render(aggregate());
     });
     const key = [...un.keys()].join('|');
@@ -1511,7 +1533,7 @@ function updateActions(){
   $('syncBtn').title = CAP.db ? 'Save every day of this main file to the online log, so others can open the earlier days' : 'The online log works on the published link.';
   $('saveDayBtn').title = CAP.db ? 'Save this day, both units, to the online history' : 'History is kept on the hosted page. Open the published link to use it.';
   [ 'actualBtn','exportBtn','pngBtn','pngMcBtn' ].forEach(id => $(id).disabled = !summarize(reportRows(u), u).hasData);
-  ['msgBtn','pngBothBtn','catBothPngBtn','catBothXlsxBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
+  ['msgBtn','pngBothBtn','catBothPngBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
 }
 
 /* ============================================================
@@ -2000,7 +2022,6 @@ const bothRun = fn => async () => { if(busy) return; busy = true;
   catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
   finally{ busy = false; } };
 $('catBothPngBtn').addEventListener('click', bothRun(buildCategoryBothPng));
-$('catBothXlsxBtn').addEventListener('click', bothRun(buildCategoryBothXlsx));
 $('pngBothBtn').addEventListener('click', async () => {
   if(busy) return; busy = true;
   try{ aggregate(); const f = await buildBuyerPngBoth(); await saveFile(f.name, f.blob); }
@@ -2027,7 +2048,7 @@ $('bothBtn').addEventListener('click', async () => {
       const folder = zip.folder('UNIT-' + u);
       for(const b of [buildActualXlsx, buildFinalXlsx, buildBuyerPng, buildMcPng]){ const f = await b(u); folder.file(f.name, f.blob); }
     }
-    for(const b of [buildBuyerPngBoth, buildCategoryBothPng, buildCategoryBothXlsx]){ const f = await b(); zip.file(f.name, f.blob); }
+    for(const b of [buildBuyerPngBoth, buildCategoryBothPng]){ const f = await b(); zip.file(f.name, f.blob); }
     zip.file('MESSAGE - '+fileDate()+'.txt', buildMessage());   // combined Unit 1 + 2 reports sit beside the UNIT folders
     const blob = await zip.generateAsync({type:'blob'});
     await saveFile('FINAL PACKAGE - ' + fileDate() + '.zip', blob);
@@ -2433,15 +2454,21 @@ function openProblems(){
   const unknownBuyers = new Map(); list.forEach(x => x.why.forEach(w => { if(/is not in the list/.test(w)){ const k = String(x.row.buyer).trim().toUpperCase(); unknownBuyers.set(k, (unknownBuyers.get(k)||0) + 1); } }));
   const body = list.length ? days.map(iso => `<div class="prob-day"><b>${labelOf(iso)}</b>${list.filter(x => x.iso === iso).map(x => `<div class="prob-row"><span>UNIT ${x.unit} · MC ${esc(x.row.mc)} · batch ${esc(x.row.batch)} · ${esc(x.row.buyer||'—')} · ${esc(x.row.category||'—')} · ${n0(x.row.qty)} kg<br><small>${x.why.map(esc).join('; ')}</small></span><button class="btn small" data-go="${iso}" data-u="${x.unit}">Fix</button></div>`).join('')}</div>`).join('')
     : '<div class="empty">No buyer or category problems found in the loaded days of this month.</div>';
-  const quick = unknownBuyers.size ? `<div class="prob-quick"><b>Buyer not in the list — add it, or tell me which existing buyer it is</b>${[...unknownBuyers].map(([k,c]) => `<div class="prob-row"><span>${esc(k)} <small>(${c} batch${c>1?'es':''})</small></span><span><button class="btn small" data-add="IN" data-n="${esc(k)}">Add as IN HOUSE</button> <button class="btn small" data-add="SUB" data-n="${esc(k)}">Add as SUB CONTRACT</button><br><select class="edit-input" data-same="${esc(k)}" style="margin-top:6px;max-width:220px"><option value="">Same as an existing buyer…</option>${effectiveRules().map(r => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}</select></span></div>`).join('')}</div>` : '';
+  const quick = unknownBuyers.size ? `<div class="prob-quick"><b>Buyer not in the list — add it, or choose the right buyer to correct my entries</b>${[...unknownBuyers].map(([k,c]) => `<div class="prob-row"><span>${esc(k)} <small>(${c} batch${c>1?'es':''})</small></span><span><button class="btn small" data-add="IN" data-n="${esc(k)}">Add as IN HOUSE</button> <button class="btn small" data-add="SUB" data-n="${esc(k)}">Add as SUB CONTRACT</button><br><select class="edit-input" data-same="${esc(k)}" style="margin-top:6px;max-width:220px"><option value="">Wrong spelling: change my entries to…</option>${effectiveRules().map(r => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}</select></span></div>`).join('')}</div>` : '';
   box.innerHTML = `<div class="modal-box bset"><h3>Problems this month · buyer or category wrong</h3><p class="sec-note">${list.length} batch${list.length===1?'':'es'} in ${days.length} day${days.length===1?'':'s'} (days loaded from the main file or on screen). Batches with no batch number or no quantity, and bracketed batches, are not counted as problems.</p>${quick}<div class="bset-list">${body}</div><div class="modal-actions"><button class="btn small primary" id="probClose">Close</button></div></div>`;
   $('probClose').onclick = () => { box.style.display = 'none'; };
   box.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { STATE.assign[b.dataset.n] = b.dataset.add; persistBuyers(); render(aggregate()); openProblems(); });
-  box.querySelectorAll('[data-same]').forEach(sel => sel.onchange = () => { if(!sel.value) return; STATE.assign[sel.dataset.same] = 'MERGE:' + sel.value; persistBuyers(); render(aggregate()); openProblems(); });   // this spelling is counted under the chosen buyer, on every day
+  box.querySelectorAll('[data-same]').forEach(sel => sel.onchange = () => { if(!sel.value) return; const n = renameBuyer(sel.dataset.same, sel.value); persistBuyers(); render(aggregate()); openProblems(); toast(n + ' entr' + (n === 1 ? 'y' : 'ies') + ' changed to ' + sel.value + '.'); });   // the entries get the chosen buyer, on every loaded day
   box.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const iso = b.dataset.go; box.style.display = 'none'; STATE.unit = +b.dataset.u; STATE.unitChosen = true; entryOnlyBad = true;
     if(iso === STATE.reportIso){ render(aggregate()); switchView('entry'); }
     else if(STATE.main && STATE.main.dayMap[iso]){ currentView = 'entry'; loadMainDay(iso); } });
+}
+/* a production batch: has a batch number and a quantity, is not a sample / machine-wash line and is not still running (brackets) */
+function isProdBatch(r){
+  const smp = /SAMPLE/i.test(r.mc) || /^\s*(MC\s*)?(WASH|WASHING)\b/i.test(r.buyer||'');
+  const open = /[()]/.test(r.batch||'') || r.flagged;
+  return !smp && !open && !!String(r.batch||'').trim() && r.qty !== null && r.qty !== undefined;
 }
 function entryIssues(rows, u){
   const rp = buyerReport(rows), unm = new Set(rp.unmapped);
@@ -2451,7 +2478,7 @@ function entryIssues(rows, u){
   rows.forEach(r => {
     const p = [], smp = /SAMPLE/i.test(r.mc) || /^\s*(MC\s*)?(WASH|WASHING)\b/i.test(r.buyer||'');   // sample and machine-wash lines carry no batch
     const open = /[()]/.test(r.batch||'') || r.flagged;   // brackets = batch still running: nothing to enter yet
-    if(!smp && !open && String(r.batch||'').trim() && r.qty !== null && r.qty !== undefined){   // no batch number or no quantity: nothing was produced, not a problem
+    if(isProdBatch(r)){   // no batch number or no quantity: nothing was produced, not a problem
       if(!String(r.batch||'').trim()) p.push('batch number missing');
       else if(cnt.get(norm(r.batch)) > 1) p.push('same batch number on ' + cnt.get(norm(r.batch)) + ' rows');
       if(!String(r.buyer||'').trim()) p.push('buyer missing');
@@ -2483,7 +2510,7 @@ function renderEntry(){
   const H = ['#','M/C','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','CATEGORY','SHADE','LOAD','UNLOAD','RFT','CHECK'];
   const ec = (r, f) => (r.xl && !STATE.viewOnly) ? `<input class="edit-input ent-in" data-id="${r.id}" data-f="${f}" value="${esc(r[f])}">` : esc(r[f]);
   const trs = show.map(r => { const p = iss.get(r), i = rows.indexOf(r) + 1;
-    return `<tr class="${p.length ? 'bad' : ''}"><td class="rn">${i}</td><td class="c">${esc(r.mc)}</td><td>${r.cap ? n0(r.cap) : ''}</td><td>${ec(r,'buyer')}</td><td>${ec(r,'order')}</td><td class="${/same batch|batch number/.test(p.join()) ? 'x' : ''}">${ec(r,'batch')}</td>
+    return `<tr class="${p.length ? 'bad' : ''}"><td class="rn${isProdBatch(r) ? ' prodb' : ''}"${isProdBatch(r) ? ' title="production batch"' : ''}>${i}</td><td class="c">${esc(r.mc)}</td><td>${r.cap ? n0(r.cap) : ''}</td><td>${ec(r,'buyer')}</td><td>${ec(r,'order')}</td><td class="${/same batch|batch number/.test(p.join()) ? 'x' : ''}">${ec(r,'batch')}</td>
       <td class="colour-cell">${esc(r.color)}</td><td>${esc(r.fabric)}</td><td class="n">${r.qty === null || r.qty === undefined ? '' : n0(r.qty)}</td><td>${ec(r,'category')}</td><td>${esc(r.shade)}</td><td>${ec(r,'loadTime')}</td><td>${ec(r,'unloadTime')}</td><td>${esc(r.rft)}</td>
       <td class="chk">${p.length ? p.map(esc).join('; ') : (/[()]/.test(r.batch||'') || r.flagged ? '<span class="opn">running (brackets), not counted</span>' : '<span class="okc">OK</span>')}</td></tr>`; }).join('');
   el.innerHTML = `<div class="hist-top"><span class="sec-note"><b>UNIT ${u}</b> · ${esc(reportLabel())} · ${rows.length} rows · ${bad.length ? '<span class="badc">' + bad.length + ' rows need a look (' + nIssues + ' problems)</span>' : '<span class="okc">every row looks complete</span>'}</span>
@@ -2524,7 +2551,7 @@ function pushBuyers(){
     }catch(e){ console.error(e); toast('Buyer list is saved on this device only. Could not reach the online copy, it will retry next time you open the page.', 'err'); }
   }, 300);
 }
-const normCustom = c => ({added:(c&&c.added)||[], grp:(c&&c.grp)||{}, keys:(c&&c.keys)||{}, repl:(c&&c.repl)||{}, removed:(c&&c.removed)||[]});
+const normCustom = c => ({added:(c&&c.added)||[], grp:(c&&c.grp)||{}, keys:(c&&c.keys)||{}, repl:(c&&c.repl)||{}, removed:(c&&c.removed)||[], rename:(c&&c.rename)||{}});
 function applyBuyerConfig(custom, assign, fixes){
   const before = JSON.stringify([STATE.custom, STATE.assign, STATE.fixes]);
   if(custom) STATE.custom = normCustom(custom);
@@ -2532,10 +2559,11 @@ function applyBuyerConfig(custom, assign, fixes){
   if(fixes) STATE.fixes = fixes;
   if(JSON.stringify([STATE.custom, STATE.assign, STATE.fixes]) === before) return;   // nothing new from the other devices
   try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); localStorage.setItem('frr_fixes', JSON.stringify(STATE.fixes)); }catch(e){}
+  applyAllRenames();
   if(dashboard.style.display !== 'none') render(aggregate());
 }
 async function loadBuyerConfig(){
-  const hasLocal = () => STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.assign).length || Object.keys(STATE.fixes).length;
+  const hasLocal = () => STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.custom.rename).length || Object.keys(STATE.assign).length || Object.keys(STATE.fixes).length;
   try{
     let c = null, a = null, fx = null, found = false;
     if(CAP.db){
@@ -2573,9 +2601,11 @@ function buyerSettings(){
       <div class="bset-add"><input id="bsName" class="edit-input" placeholder="New buyer name"><select id="bsGrp" class="edit-input"><option value="IN">IN HOUSE</option><option value="SUB">SUB CONTRACT</option></select><input id="bsKw" class="edit-input" placeholder="Keywords (optional, comma separated; the name is used if empty)"><button class="btn small primary" id="bsAdd">Add buyer</button></div>
       <input id="bsFind" class="edit-input" placeholder="Search buyers" style="margin:10px 0;width:100%">
       <div class="tscroll bset-list"><table class="entry-table"><thead><tr><th>BUYER</th><th>GROUP</th><th>KEYWORDS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${Object.keys(STATE.custom.rename).length ? '<p class="sec-note" style="margin-top:12px"><b>Spelling corrections kept</b> (wrong spelling → buyer put in the entries)</p>' + Object.entries(STATE.custom.rename).map(([k,v]) => `<div class="prob-row"><span>${esc(k)} → <b>${esc(v)}</b></span><button class="btn small" data-unren="${esc(k)}">Stop correcting</button></div>`).join('') : ''}
       <div class="modal-actions"><button class="btn small" id="bsReset">Reset my changes</button><button class="btn small primary" id="bsDone">Done</button></div></div>`;
     const commit = () => { persistBuyers(); if(dashboard.style.display !== 'none') render(aggregate()); };
     $('bsDone').onclick = () => { box.style.display = 'none'; };
+    box.querySelectorAll('[data-unren]').forEach(b => b.onclick = () => { delete STATE.custom.rename[b.dataset.unren]; commit(); draw(); toast('Stopped. Load the main file again to see the original spelling.'); });
     $('bsFind').oninput = e => { const q = e.target.value.trim().toUpperCase(); box.querySelectorAll('tbody tr').forEach(tr => { tr.style.display = !q || tr.dataset.n.toUpperCase().includes(q) ? '' : 'none'; }); };
     $('bsAdd').onclick = () => {
       const name = $('bsName').value.trim().toUpperCase(); if(!name){ toast('Type the buyer name first', 'err'); return; }
@@ -2583,7 +2613,7 @@ function buyerSettings(){
       STATE.custom.added.push({name, grp:$('bsGrp').value, keys: kwList($('bsKw').value).length ? kwList($('bsKw').value) : [name]});
       commit(); draw(); toast('Added ' + name);
     };
-    $('bsReset').onclick = async () => { const ok = await askModal({title:'Reset buyer list', body:'<p>Remove all buyers you added and all changes you made to the list?</p>', ok:'Reset'}); if(!ok){ buyerSettings(); return; } STATE.custom = {added:[], grp:{}, keys:{}, repl:{}, removed:[]}; commit(); buyerSettings(); };
+    $('bsReset').onclick = async () => { const ok = await askModal({title:'Reset buyer list', body:'<p>Remove all buyers you added and all changes you made to the list?</p>', ok:'Reset'}); if(!ok){ buyerSettings(); return; } STATE.custom = {added:[], grp:{}, keys:{}, repl:{}, removed:[], rename:{}}; commit(); buyerSettings(); };
     box.querySelectorAll('tbody tr').forEach(tr => {
       const n = tr.dataset.n, mineB = STATE.custom.added.find(b => b.name === n), base = RULES.find(x => x.name === n);
       tr.querySelector('[data-grp]').onchange = e => { if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ STATE.assign[n] = e.target.value; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); }catch(x){} } else if(mineB) mineB.grp = e.target.value; else if(base && e.target.value === base.grp) delete STATE.custom.grp[n]; else STATE.custom.grp[n] = e.target.value; commit(); draw(); };
@@ -2622,30 +2652,43 @@ function gRow(r){
   const q = r.flagged ? String(r.qtyRaw) : (r.qty === null || r.qty === undefined ? '' : r.qty);
   return [r.mc, r.cap ?? '', r.buyer, r.order, r.batch, r.color, r.fabric, q, r.loadTime, r.unloadTime, r.duration, r.rft, r.category, r.shade];
 }
+const hashOf = o => { const t = JSON.stringify(o); let h = 5381; for(let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36) + ':' + t.length; };
+const sentMap = () => { try{ return JSON.parse(localStorage.getItem('frr_sent') || '{}') || {}; }catch(e){ return {}; } };
+const setSentMap = m => { try{ localStorage.setItem('frr_sent', JSON.stringify(m)); }catch(e){} };
 async function sendToGoogle(){
   if(busy || !STATE.main) return;
   let g = GCFG();
   if(!g.url){ if(!await googleSetup()) return; g = GCFG(); }
-  busy = true; const btn = $('gBtn'), old = btn.textContent;
+  busy = true; const btn = $('gBtn'), old = btn.textContent, t0 = Date.now();
   const items = [];
   STATE.main.days.forEach(d => [1,2].forEach(u => {
     const rows = d.iso === STATE.reportIso ? dayRowsOf(u, d.iso) : d.entries.filter(e => e.unit === u);
     const s = summarize(rows, u); if(!s.hasData) return;
-    items.push({unit:u, iso:d.iso, sum:{prod:s.B, color:s.C, dpd:s.D, ww:s.F, reproc:reprocFor(u, d.iso, s.Hauto), sample:s.J, ok:s.ok}, rows:rows.map(gRow)});
+    const it = {unit:u, iso:d.iso, sum:{prod:s.B, color:s.C, dpd:s.D, ww:s.F, reproc:reprocFor(u, d.iso, s.Hauto), sample:s.J, ok:s.ok}, rows:rows.map(gRow)};
+    it.h = hashOf({sum:it.sum, rows:it.rows}); items.push(it);
   }));
+  // only days that are new or changed since the last send from this device go over the wire (this is what makes it fast)
+  const known = sentMap(); let todo = items.filter(it => known[it.unit + '_' + it.iso] !== it.h);
+  if(!todo.length){
+    const again = await askModal({title:'Nothing new to send', ok:'Send everything again', cancel:'Close', body:`<p>All ${items.length} days are the same as the last time you sent them from this device.</p>`});
+    if(!again){ busy = false; return; }
+    todo = items;
+  }
   const problems = [], changed = []; let sent = 0, unconfirmed = false;
   try{
-    for(let i = 0; i < items.length; i += 4){
-      btn.textContent = 'Sending ' + Math.min(i + 4, items.length) + ' of ' + items.length + '...';
-      const batch = items.slice(i, i + 4);
-      const res = await fetch(g.url, {method:'POST', body:JSON.stringify({items:batch}), redirect:'follow'});
+    const CH = 10;
+    for(let i = 0; i < todo.length; i += CH){
+      btn.textContent = 'Sending ' + Math.min(i + CH, todo.length) + ' of ' + todo.length + '...';
+      const batch = todo.slice(i, i + CH);
+      const res = await fetch(g.url, {method:'POST', body:JSON.stringify({items:batch.map(({h, ...rest}) => rest)}), redirect:'follow'});
       let j = null; try{ j = await res.json(); }catch(e){ unconfirmed = true; }
-      if(j){ if(j.error){ throw new Error(j.error); } (j.problems||[]).forEach(p => problems.push(p)); (j.changed||[]).forEach(p => changed.push(p)); }
+      if(j){ if(j.error){ throw new Error(j.error); } (j.problems||[]).forEach(p => problems.push(p)); (j.changed||[]).forEach(p => changed.push(p)); const k2 = sentMap(); batch.forEach(b => { k2[b.unit + '_' + b.iso] = b.h; }); setSentMap(k2); }
       sent += batch.length;
     }
     loadGoogleHist();
+    const secs = Math.max(1, Math.round((Date.now() - t0) / 1000)), skipped = items.length - todo.length;
     const lines = [...changed.map(x => '<li><b>Changed:</b> ' + esc(x) + '</li>'), ...problems.map(x => '<li>' + esc(x) + '</li>')];
-    await askModal({title:'Sent to Google', ok:'OK', cancel:null, body:`<p>${sent} unit-days sent to your monthly Google Sheet${unconfirmed ? ' (Google did not send back a confirmation, so open the sheet to check)' : ''}.</p>` +
+    await askModal({title:'Sent to Google', ok:'OK', cancel:null, body:`<p>${sent} unit-day${sent === 1 ? '' : 's'} sent to your monthly Google Sheet in ${secs} s${skipped ? ' (' + skipped + ' unchanged day' + (skipped === 1 ? '' : 's') + ' skipped)' : ''}${unconfirmed ? ' (Google did not send back a confirmation, so open the sheet to check)' : ''}.</p>` +
       (lines.length ? '<p>These do not match or changed:</p><ul>' + lines.join('') + '</ul>' : (unconfirmed ? '' : '<p>Everything matches what was stored.</p>'))});
   }catch(e){
     console.error(e);
