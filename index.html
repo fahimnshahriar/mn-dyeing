@@ -416,6 +416,7 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
         <button class="btn small" id="pngBtn">Buyer report · .png</button>
         <button class="btn small" id="catBothPngBtn">Category report, Unit 1 + 2 · .png</button>
         <button class="btn small" id="catBothXlsxBtn">Category report, Unit 1 + 2 · .xlsx</button>
+        <button class="btn small primary" id="msgBtn">Message for the boss · copy</button>
         <button class="btn small" id="pngBothBtn">Buyer report, Unit 1 + 2 combined · .png</button>
         <button class="btn small" id="pngMcBtn">MC report · .png</button>
         <button class="btn small" id="bothBtn">Everything, both units · .zip</button>
@@ -1482,7 +1483,7 @@ function updateActions(){
   $('syncBtn').title = CAP.db ? 'Save every day of this main file to the online log, so others can open the earlier days' : 'The online log works on the published link.';
   $('saveDayBtn').title = CAP.db ? 'Save this day, both units, to the online history' : 'History is kept on the hosted page. Open the published link to use it.';
   [ 'actualBtn','exportBtn','pngBtn','pngMcBtn' ].forEach(id => $(id).disabled = !summarize(reportRows(u), u).hasData);
-  ['pngBothBtn','catBothPngBtn','catBothXlsxBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
+  ['msgBtn','pngBothBtn','catBothPngBtn','catBothXlsxBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
 }
 
 /* ============================================================
@@ -1790,20 +1791,60 @@ function buildBuyerPngBoth(){
 /* both floors, category-wise, one row per unit (the layout of the CATEGORY tab, units stacked) */
 function categoryBothData(){
   const H = ['DATE','UNIT','PRODUCTION QTY','COLOR','DPD','DPD (%)','WHITE / WASH','WHITE / WASH (%)','SAMPLE','LOADING %','BATCH/MC'];
-  const date = labelOf(STATE.reportIso), body = [];
-  const T = {B:0,C:0,D:0,F:0,J:0};
+  const date = labelOf(STATE.reportIso), body = [], sms = [];
+  const T = {B:0,C:0,D:0,F:0,J:0}; let den = 0, bt = 0, mn = 0;
   [1,2].forEach(u => { const sm = summarize(reportRows(u), u); if(!sm.hasData) return;
     ['B','C','D','F','J'].forEach(k => T[k] += sm[k]);
+    if(sm.loading) den += sm.B / sm.loading * 100; bt += sm.tot.t; mn += sm.machines.length;   // combined loading % and batch/MC from the same pieces
+    sms.push({u, sm});
     body.push([date, 'UNIT '+u, sm.B, sm.C, sm.D, pct(sm.D,sm.B,1), sm.F, pct(sm.F,sm.B,2), sm.J, sm.loading === null ? '' : sm.loading.toFixed(2)+'%', sm.avgBatch.toFixed(2)]); });
-  const foot = ['', 'TOTAL', T.B, T.C, T.D, pct(T.D,T.B,1), T.F, pct(T.F,T.B,2), T.J, '', ''];
+  const foot = ['', 'TOTAL', T.B, T.C, T.D, pct(T.D,T.B,1), T.F, pct(T.F,T.B,2), T.J, den ? (T.B/den*100).toFixed(2)+'%' : '', mn ? (bt/mn).toFixed(2) : ''];
   const title = 'CATEGORY-WISE PRODUCTION REPORT (' + (/^\d{4}-/.test(STATE.reportIso) ? (+STATE.reportIso.slice(8)) + ' ' + MONTHS[+STATE.reportIso.slice(5,7)-1] + '- ' + STATE.reportIso.slice(0,4) : date) + ')';
-  return {H, body, foot, title};
+  return {H, body, foot, title, date};
 }
+/* phone-friendly picture: portrait card. Production on top, then COLOR / DPD / WHITE-WASH each in its own colour band
+   (the % sits right under its own figure), then SAMPLE / LOADING / BATCH-MC. UNIT 1, UNIT 2 and TOTAL across. */
 function buildCategoryBothPng(){
-  const d = categoryBothData();
-  return tablePng({title:'UNIT 1 + UNIT 2', sub:d.title, date:dateLabel(), head:d.H, right:[2,3,4,5,6,7,8,9,10],
-    rows:d.body.map((r,i) => ({cells:r.map((v,c) => typeof v === 'number' ? n0(v) : v), bg:i%2?'#fff':'#'+LIGHT, bold:1})),
-    foot:{cells:d.foot.map(v => typeof v === 'number' ? n0(v) : v)}, file:'CATEGORY REPORT - '+fileDate()+' (UNIT-1+2).png'});
+  const d = categoryBothData(), cols = [...d.body.map(r => r[1]), 'TOTAL'];
+  const val = (r, ci) => { const src = ci < d.body.length ? d.body[ci] : d.foot, v = src[r]; return v === '' || v == null ? '—' : (typeof v === 'number' ? n0(v) : v); };
+  // [label, value index, % index or null, band colour, row height]
+  const SEC1 = [['PRODUCTION (KG)', 2, null, '#12232B', 118]];
+  const SEC2 = [['COLOR', 3, null, '#2F9C8E', 112], ['DPD', 4, 5, '#E0A339', 150], ['WHITE / WASH', 6, 7, '#5B7C99', 150]];
+  const SEC3 = [['SAMPLE', 8, null, '#8A9AA3', 104], ['LOADING %', 9, null, '#1F7A70', 104], ['BATCH / MC', 10, null, '#1F3A4D', 104]];
+  const W = 1080, PADX = 30, LBL = 330, HEAD = 240, COLH = 86, GAP = 22, BAND = 16;
+  const secH = a => a.reduce((t,r) => t + r[4], 0);
+  const H = HEAD + COLH + secH(SEC1) + GAP + secH(SEC2) + GAP + secH(SEC3) + 36;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d');
+  const F = (sz,b) => (b ? 'bold ' : '') + sz + 'px Arial';
+  c.fillStyle = '#F3F6F8'; c.fillRect(0,0,W,H);
+  // header
+  c.fillStyle = '#12232B'; c.fillRect(0,0,W,HEAD);
+  c.textBaseline = 'middle'; c.textAlign = 'left';
+  c.fillStyle = '#fff'; c.font = F(54,1); c.fillText('CATEGORY-WISE PRODUCTION', PADX, 62);
+  c.fillStyle = '#C9D6DA'; c.font = F(36,0); c.fillText(d.body.length > 1 ? 'UNIT 1 + UNIT 2 REPORT' : 'PRODUCTION REPORT', PADX, 128);
+  c.fillStyle = '#E0A339'; c.font = F(56,1); c.fillText(d.date, PADX, 190);
+  const x0 = PADX + LBL, cw = (W - PADX - x0) / cols.length, rx = i => x0 + cw*(i+1) - 12;
+  // column heads
+  c.fillStyle = '#1F3A4D'; c.fillRect(0, HEAD, W, COLH); c.fillStyle = '#fff'; c.font = F(38,1); c.textAlign = 'right';
+  cols.forEach((n,i) => c.fillText(n, rx(i), HEAD + COLH/2));
+  let y = HEAD + COLH;
+  const pill = (txt, xr, yc, col) => { c.font = F(33,1); const w = c.measureText(txt).width + 30, h = 46, x = xr - w;
+    c.fillStyle = col; c.beginPath(); c.roundRect ? c.roundRect(x, yc-h/2, w, h, 23) : c.rect(x, yc-h/2, w, h); c.fill();
+    c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText(txt, x + w/2, yc + 1); };
+  const section = (rows, tint) => { rows.forEach(([label, vi, pi, col, h], k) => {
+    c.fillStyle = tint ? '#FFFFFF' : '#FFF3DC'; c.fillRect(0, y, W, h);
+    c.fillStyle = col; c.fillRect(0, y, BAND, h);                       // colour band
+    c.fillStyle = 'rgba(0,0,0,.10)'; c.fillRect(BAND, y+h-2, W-BAND, 2);
+    c.textAlign = 'left'; c.fillStyle = col === '#E0A339' ? '#9A6A0A' : col; c.font = F(36,1); c.fillText(label, PADX, y + h/2);
+    cols.forEach((n,i) => { const tot = i === cols.length-1;
+      if(tot){ c.fillStyle = 'rgba(31,58,77,.06)'; c.fillRect(x0 + cw*i, y, W - (x0 + cw*i), h-2); }
+      c.textAlign = 'right'; c.fillStyle = '#111'; c.font = F(vi === 2 ? 54 : 48, 1);
+      c.fillText(val(vi,i), rx(i), pi ? y + 54 : y + h/2);
+      if(pi) pill(val(pi,i), rx(i), y + h - 44, col);
+    });
+    y += h; }); };
+  section(SEC1, false); y += GAP; section(SEC2, true); y += GAP; section(SEC3, true);
+  return new Promise(res => cv.toBlob(b => res({name:'CATEGORY REPORT - '+fileDate()+' (UNIT-1+2).png', blob:b}), 'image/png'));
 }
 function buildCategoryBothXlsx(){
   const d = categoryBothData();
@@ -1817,6 +1858,37 @@ function buildCategoryBothXlsx(){
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'CATEGORY');
   return {name:'CATEGORY REPORT - '+fileDate()+' (UNIT-1+2).xlsx', blob:aoaBlob(wb)};
 }
+/* ---------- the daily WhatsApp-style message, both units, ready to copy ---------- */
+function buildMessage(){
+  const iso = STATE.reportIso, mon = /^\d{4}-/.test(iso) ? MONTHS[+iso.slice(5,7)-1] : '';
+  const Mon = mon.charAt(0) + mon.slice(1).toLowerCase(), mt = kg => (kg/1000).toFixed(3) + 'MT';
+  const out = [];
+  [1,2].forEach(u => { const sm = summarize(reportRows(u), u); if(!sm.hasData) return;
+    const mr = monthReport(u), wd = mr ? mr.wd : 0;
+    const L = ['UNIT-0' + u, 'Dear Sir,', 'Dyeing Production Date : ' + labelOf(iso), '', 'Total Production : ' + mt(sm.B), '',
+      'White/Wash : ' + (sm.B ? (sm.F/sm.B*100).toFixed(2) : '0') + '%', 'DPD : ' + (sm.B ? (sm.D/sm.B*100).toFixed(1) : '0') + '%',
+      'Avg Loading : ' + (sm.loading === null ? '—' : sm.loading.toFixed(1)) + '%', 'AVG Batch/M/c : ' + sm.avgBatch.toFixed(2)];
+    if(mr){ L.push('', Mon + ' Total : ' + mt(mr.tot.B), Mon + ' (AVG) : ' + (wd ? mt(mr.tot.B/wd) : '—'), 'Total Working Day (' + Mon + ') : ' + pad2(wd)); }
+    out.push(L.join('\n')); });
+  return out.join('\n\n');
+}
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); return true; }catch(e){}
+  try{ const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; }catch(e){ return false; }
+}
+$('msgBtn').addEventListener('click', () => {
+  aggregate();
+  const text = buildMessage(); if(!text){ toast('Nothing to report for this day.', 'err'); return; }
+  let box = $('msgBox'); if(!box){ box = document.createElement('div'); box.id = 'msgBox'; box.className = 'modal'; document.body.appendChild(box); }
+  box.style.display = 'flex';
+  box.innerHTML = `<div class="modal-box bset"><h3>Message · ${esc(reportLabel())}</h3>
+    <p class="sec-note">You can change anything in the box before copying.</p>
+    <textarea id="msgText" class="edit-input" style="width:100%;height:55vh;font:14px/1.5 Consolas,monospace;white-space:pre;"></textarea>
+    <div class="modal-actions"><button class="btn small" id="msgClose">Close</button><button class="btn small primary" id="msgCopy">Copy to clipboard</button></div></div>`;
+  $('msgText').value = text;
+  $('msgClose').onclick = () => { box.style.display = 'none'; };
+  $('msgCopy').onclick = async () => { const ok = await copyText($('msgText').value); if(ok) toast('Message copied'); else { $('msgText').select(); toast('Could not copy automatically. The text is selected, press Ctrl+C.', 'err'); } };
+});
 function buildMcPng(u){
   const rows = unitRows(u).filter(r => r.qty !== null);
   const tr = rows.map(r => { const mc = parseInt(r.mc,10);
@@ -1927,7 +1999,8 @@ $('bothBtn').addEventListener('click', async () => {
       const folder = zip.folder('UNIT-' + u);
       for(const b of [buildActualXlsx, buildFinalXlsx, buildBuyerPng, buildMcPng]){ const f = await b(u); folder.file(f.name, f.blob); }
     }
-    if(todo.length > 1){ for(const b of [buildBuyerPngBoth, buildCategoryBothPng, buildCategoryBothXlsx]){ const f = await b(); zip.file(f.name, f.blob); } }
+    for(const b of [buildBuyerPngBoth, buildCategoryBothPng, buildCategoryBothXlsx]){ const f = await b(); zip.file(f.name, f.blob); }
+    zip.file('MESSAGE - '+fileDate()+'.txt', buildMessage());   // combined Unit 1 + 2 reports sit beside the UNIT folders
     const blob = await zip.generateAsync({type:'blob'});
     await saveFile('FINAL PACKAGE - ' + fileDate() + '.zip', blob);
   }catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
