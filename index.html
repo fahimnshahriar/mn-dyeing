@@ -1148,7 +1148,7 @@ function render(d){
       <div style="margin-top:12px"><button class="btn small primary" id="assignApply">Apply</button></div></div>`;
     document.getElementById('assignApply').addEventListener('click', () => {
       ab.querySelectorAll('select').forEach(s => { if(s.value) STATE.assign[s.dataset.buyer] = s.value; });
-      try { localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); } catch(e){}
+      persistBuyers();
       render(aggregate());
     });
     const key = [...un.keys()].join('|');
@@ -2178,18 +2178,8 @@ $('mainListBtn').addEventListener('click', exportCorrectionsList);
 $('mainFixBtn').addEventListener('click', exportCorrectedMain);
 
 /* buyer list and buyer answers are kept in Google too, so every phone / PC recognizes them */
-let gSetTimer = null;
-function saveGoogleSettings(){
-  if(CAP.db) return;
-  clearTimeout(gSetTimer);
-  gSetTimer = setTimeout(async () => {
-    try{
-      const u = GCFG().url; if(!u) return;
-      await fetch(u, {method:'POST', body:JSON.stringify({action:'settings', settings:{custom:STATE.custom, assign:STATE.assign}}), redirect:'follow'});
-    }catch(e){ console.error(e); }
-  }, 800);
-}
-
+let gSetTimer = null, pushSeq = 0;
+const saveGoogleSettings = () => pushBuyers();
 /* ============================================================
    HISTORY — saved days kept in the hosted page's database
    ============================================================ */
@@ -2428,29 +2418,59 @@ function renderEntry(){
    BUYER LIST — add a buyer, switch IN HOUSE / SUB CONTRACT, add keywords.
    Lives in its own window; the built-in list is never edited.
    ============================================================ */
+/* Everything about the buyer list (your added buyers, keyword edits, removals AND the answers from the "not recognised" box)
+   is kept in three places: this browser, the online copy (hosted database or Google), and a "dirty" mark that says
+   "this browser has a change the online copy has not confirmed yet". A dirty browser is never overwritten by the online copy. */
+const BDIRTY = 'frr_buyers_dirty';
+const setDirty = v => { try{ v ? localStorage.setItem(BDIRTY, '1') : localStorage.removeItem(BDIRTY); }catch(e){} };
+const isDirty = () => { try{ return !!localStorage.getItem(BDIRTY); }catch(e){ return false; } };
 function persistBuyers(){
-  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){}
-  saveGoogleSettings();
-  if(CAP.db){ try{ CAP.db.collection('config').doc('buyers').set({json: JSON.stringify(STATE.custom)}).catch(() => {}); }catch(e){} }
+  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(e){}
+  setDirty(true); pushBuyers();
+}
+function pushBuyers(){
+  clearTimeout(gSetTimer);
+  gSetTimer = setTimeout(async () => {
+    const mine = ++pushSeq, payload = {custom:STATE.custom, assign:STATE.assign};
+    try{
+      if(CAP.db){ await CAP.db.collection('config').doc('buyers').set({json: JSON.stringify(payload)}); }
+      else {
+        const u = GCFG().url; if(!u) throw new Error('no online link');
+        const r = await fetch(u, {method:'POST', body:JSON.stringify({action:'settings', settings:payload}), redirect:'follow'});
+        let j = null; try{ j = await r.json(); }catch(e){}
+        if(j && j.ok === false) throw new Error(j.error || 'the online copy refused it');
+      }
+      if(mine === pushSeq) setDirty(false);
+    }catch(e){ console.error(e); toast('Buyer list is saved on this device only. Could not reach the online copy, it will retry next time you open the page.', 'err'); }
+  }, 300);
+}
+const normCustom = c => ({added:(c&&c.added)||[], grp:(c&&c.grp)||{}, keys:(c&&c.keys)||{}, repl:(c&&c.repl)||{}, removed:(c&&c.removed)||[]});
+function applyBuyerConfig(custom, assign){
+  const before = JSON.stringify([STATE.custom, STATE.assign]);
+  if(custom) STATE.custom = normCustom(custom);
+  if(assign) STATE.assign = assign;
+  if(JSON.stringify([STATE.custom, STATE.assign]) === before) return;   // nothing new from the other devices
+  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(e){}
+  if(dashboard.style.display !== 'none') render(aggregate());
 }
 async function loadBuyerConfig(){
-  if(!CAP.db){
-    try{
-      const j = await gGet({action:'settings'}), g = j.settings || {};
-      if(g.custom){ STATE.custom = {added:g.custom.added||[], grp:g.custom.grp||{}, keys:g.custom.keys||{}, repl:g.custom.repl||{}, removed:g.custom.removed||[]}; try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){} }
-      if(g.assign){ STATE.assign = g.assign; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); }catch(e){} }
-      if(!g.custom && !g.assign && (STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.assign).length)) saveGoogleSettings();   // first time: send what this browser already has
-      if(dashboard.style.display !== 'none') render(aggregate());
-    }catch(e){ console.error(e); }
-    return;
-  }
+  const hasLocal = () => STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.assign).length;
   try{
-    const s = await CAP.db.collection('config').doc('buyers').get();
-    if(s.exists){ const c = JSON.parse(s.data().json); STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}, repl:c.repl||{}, removed:c.removed||[]};
-      try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){}
-      if(dashboard.style.display !== 'none') render(aggregate()); }
-  }catch(e){}
+    let c = null, a = null, found = false;
+    if(CAP.db){
+      const s = await CAP.db.collection('config').doc('buyers').get();
+      if(s.exists){ const o = JSON.parse(s.data().json); found = true; if(o.custom){ c = o.custom; a = o.assign; } else c = o; }   // old copies held only the custom part
+    } else {
+      const j = await gGet({action:'settings'}), g = j.settings || {}; c = g.custom || null; a = g.assign || null; found = !!(c || a);
+    }
+    if(isDirty() || (!found && hasLocal())){ pushBuyers(); return; }   // this browser has newer changes (or the online copy is empty): send them up, keep them
+    if(found){ const bs = $('bset'); if(bs && bs.style.display !== 'none') return; applyBuyerConfig(c, a); }   // not while the Buyer list window is open
+  }catch(e){ console.error(e); }
 }
+/* the buyer list syncs by itself: when the page opens, every 30 seconds, and whenever you come back to the tab */
+setInterval(() => { if(!document.hidden) loadBuyerConfig(); }, 30000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) loadBuyerConfig(); });
+window.addEventListener('focus', () => loadBuyerConfig());
 const kwList = s => String(s||'').split(',').map(x => x.trim()).filter(Boolean);
 function buyerSettings(){
   let box = $('bset'); if(!box){ box = document.createElement('div'); box.id = 'bset'; box.className = 'modal'; document.body.appendChild(box); }
