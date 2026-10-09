@@ -50,3 +50,8 @@ When the page opens it reads the saved days from your monthly Google Sheets (las
 Buyers you add or correct in **Buyer list** (and the IN HOUSE / SUB answers) are saved to a small file `floor-report-settings.json` in the same Drive folder, so every phone and PC recognizes them. After pasting the new `FloorReports.gs`, redeploy it as a **New version**.
 
 **If Excel cannot open the corrected copy:** press **Corrections list · .xlsx** instead. It lists each corrected cell (cell address, was, now) so you can type the changes into your own file.
+
+## Logo, downloads, settings
+- **Company logo:** put your logo file next to `index.html` and name it `logo.png`. It shows at the top left of the page (about 54 px high, smaller on phones). If the file is missing, nothing is shown.
+- **Floating Downloads button** (bottom right): opens "Final reports · download options" with all the export buttons, Send to Google and the corrected main file.
+- **Google link** is now a small "Settings · Google link" link at the very bottom of the page.

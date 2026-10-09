@@ -47,6 +47,9 @@
     border-bottom:1px solid var(--line);
     padding-bottom:22px;margin-bottom:18px;
   }
+  .brand{display:flex;align-items:center;gap:16px;}
+  .logo{height:54px;width:auto;max-width:170px;object-fit:contain;flex:none;}
+  @media (max-width:520px){.logo{height:38px;max-width:96px;}.brand{gap:12px;}}
   .head .eyebrow{font-size:12.5px;letter-spacing:0.04em;color:var(--ink-dim);margin:0 0 6px;}
   .head h1{font-size:26px;font-weight:600;margin:0;color:var(--ink);line-height:1.15;}
   .head h1 span{color:var(--amber);}
@@ -235,6 +238,9 @@
   .edit-input::placeholder{color:var(--ink-dim);}
   .empty{font-size:13px;color:var(--ink-dim);padding:20px 0;}
 
+  .settings-link{max-width:1180px;margin:0 auto;padding:6px 24px 90px;text-align:right;}
+  .settings-link button{background:none;border:0;color:var(--ink-dim);font-size:11.5px;opacity:.55;cursor:pointer;text-decoration:underline;}
+  .settings-link button:hover{opacity:1;}
   footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-dim);line-height:1.6;}
 
   @media (prefers-reduced-motion: no-preference){
@@ -246,6 +252,16 @@
   body.view-only #dashboard .edit-input{pointer-events:none;opacity:.7;}
   .view-banner{display:none;align-items:center;gap:12px;flex-wrap:wrap;background:#FFF6DD;border:1px solid #E0A339;border-radius:8px;padding:12px 16px;margin-bottom:18px;}
   .view-banner span{flex:1;min-width:220px;}
+  .fab{position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;align-items:center;gap:8px;background:var(--amber);color:#1b1407;border:0;border-radius:999px;padding:13px 20px;font-family:'IBM Plex Mono',monospace;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.45);}
+  .fab:hover,.fab.on{filter:brightness(1.08);}
+  .fab-ic{font-size:16px;line-height:1;}
+  @media (max-width:520px){.fab-tx{display:none;}.fab{padding:15px;}}
+  .actions.floating{display:none;position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:40;width:min(340px,calc(100vw - 36px));max-height:calc(100vh - 110px);overflow:auto;margin:0;box-shadow:0 14px 40px rgba(0,0,0,.55);}
+  .actions.floating.open{display:flex;}
+  .actions.floating .act-row{flex-direction:column;flex-wrap:nowrap;}
+  .actions.floating .btn{width:100%;text-align:left;}
+  #dashboard{padding-bottom:70px;}
+  body.view-only .fab{display:none !important;}
   .actions{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:26px;display:flex;flex-direction:column;gap:10px;}
   .actions .act-title{font-size:13px;color:var(--ink-dim);}
   .actions .act-title b{color:var(--amber);font-family:'IBM Plex Mono',monospace;}
@@ -342,9 +358,12 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
 
 <div class="wrap">
   <div class="head">
-    <div>
-      <p class="eyebrow">DAILY ACTUAL PRODUCTION REPORT</p>
-      <h1>Floor <span>report</span> reader</h1>
+    <div class="brand">
+      <img id="companyLogo" class="logo" src="logo.png" alt="Company logo" onerror="this.style.display='none'">
+      <div>
+        <p class="eyebrow">DAILY ACTUAL PRODUCTION REPORT</p>
+        <h1>Floor <span>report</span> reader</h1>
+      </div>
     </div>
     <div class="head-actions" id="headActions" style="display:none;">
       <button class="btn small" id="buyerListBtn">Buyer list</button>
@@ -389,7 +408,7 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
       <div class="kpi warn"><div class="num" id="kpiFlag">—</div><div class="lbl">batches held out for review</div></div>
     </div>
 
-    <div class="actions">
+    <div class="actions floating" id="actionsPanel">
       <div class="act-title" id="actTitle"></div>
       <div class="act-row">
         <button class="btn small primary" id="actualBtn">Actual file · .xlsx</button>
@@ -401,7 +420,6 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
         <button class="btn small" id="mainListBtn" style="display:none">Corrections list · .xlsx</button>
         <button class="btn small primary" id="syncBtn">Update online log</button>
         <button class="btn small primary" id="gBtn" style="display:none">Send to Google</button>
-        <button class="btn small" id="gSetBtn" style="display:none" title="Change the Google link">Google link</button>
         <button class="btn small" id="saveDayBtn">Save this day only</button>
       </div>
     </div>
@@ -428,8 +446,10 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
     <div id="pane_entry" style="display:none;"><div id="entryPane"></div></div>
 
     <footer id="footNote"></footer>
+    <button type="button" class="fab" id="fabBtn" aria-expanded="false" aria-controls="actionsPanel" title="Final reports · download options"><span class="fab-ic">⬇</span><span class="fab-tx">Downloads</span></button>
   </div>
 </div>
+<div class="settings-link"><button type="button" id="gSetBtn" title="Change the Google link">Settings · Google link</button></div>
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="modal-box"><h3 id="modalTitle"></h3><div id="modalBody"></div>
   <div class="modal-actions"><button class="btn small" id="modalCancel">Cancel</button><button class="btn small primary" id="modalOk">OK</button></div></div></div>
 <div class="toast" id="toast" role="status"></div>
@@ -1446,7 +1466,7 @@ function renderDayBar(){
 $('pickDayBtn').addEventListener('click', () => { if(STATE.main) showDayPicker(); });
 function updateActions(){
   const u = STATE.unit, lbl = reportLabel();
-  $('actTitle').innerHTML = `Final reports · <b>UNIT ${u}</b> · ${esc(lbl)}`;
+  $('actTitle').innerHTML = `Final reports · download options<br><span class="sec-note">UNIT ${u} · ${esc(lbl)}</span>`;
   const has = [1,2].filter(x => summarize(reportRows(x), x).hasData);
   $('bothBtn').disabled = !has.length;
   { const n = mainChanges().length, b = $('mainFixBtn'); b.style.display = (STATE.main && STATE.mainBuf) ? '' : 'none'; b.textContent = 'Corrected main file' + (n ? ' (' + n + ' change' + (n>1?'s':'') + ')' : ''); $('mainListBtn').style.display = (STATE.main && STATE.mainBuf && n) ? '' : 'none'; }
@@ -1540,7 +1560,7 @@ function buildFinalXlsx(u){
       const ex = []; rp.lines.forEach(o => o.keys.forEach(k => { const longer = o.exact ? k.toUpperCase().includes(x.toUpperCase()) : (k.length > x.length && k.toUpperCase().includes(x.toUpperCase())); if(longer && !ex.includes(k)) ex.push(k); }));
       return `SUMPRODUCT(--ISNUMBER(SEARCH("${q(x)}",${D}))${ex.map(k=>`,--ISERROR(SEARCH("${q(k)}",${D}))`).join('')},${I})`; }).join('+');
     F('C'+r,f,L.qty); };
-  const LIN = rp.lines.filter(l=>l.grp==='IN'&&l.qty>0), LSUB = rp.lines.filter(l=>l.grp==='SUB'&&l.qty>0);
+  const LIN = rp.lines.filter(l=>l.grp==='IN'), LSUB = rp.lines.filter(l=>l.grp==='SUB');   // every buyer is listed; zero shows blank and the filter arrows on row 3 can hide the blanks
   const sIn = 4+LIN.length, s0 = sIn+1, sSub = s0+LSUB.length, rS = sSub+1, rT = rS+1, rC = rT+1;
   LIN.forEach((L,i)=>line(4+i,L,'IN')); LSUB.forEach((L,i)=>line(s0+i,L,'SUB'));
   kind[sIn]='SIN'; put('B'+sIn,{t:'s',v:'SUM OF IN HOUSE'}); F('C'+sIn,`SUM(C4:C${sIn-1})`,rp.inQty);
@@ -1549,12 +1569,14 @@ function buildFinalXlsx(u){
   kind[rT]='TOT'; put('B'+rT,{t:'s',v:'TOTAL SUM'}); F('C'+rT,`C${sSub}+C${sIn}+C${rS}`,rp.total);
   kind[rC]='CHK'; put('B'+rC,{t:'s',v:'SHEET1 QTY (check)'}); F('C'+rC,`SUM(${I})`,rp.prodTotal);
   F('D'+rC,`IF(C${rT}=C${rC},"OK","WRONG - check buyer spelling / overlap")`,rp.total===rp.prodTotal?'OK':'WRONG - check buyer spelling / overlap');
-  put('D6',{t:'s',v:'IN'}); F('E6','C'+sIn,rp.inQty); put('D'+s0,{t:'s',v:'SUB'}); F('E'+s0,'C'+sSub,rp.subQty);
+  put('D'+sIn,{t:'s',v:'IN'}); F('E'+sIn,'C'+sIn,rp.inQty); put('D'+sSub,{t:'s',v:'SUB'}); F('E'+sSub,'C'+sSub,rp.subQty);   // on the sum rows so a filter never hides them
   const KS = {IN:sty('E6F4F1'), SUB:sty('FFF3DC'), SIN:sty('9ED3CB',{b:1}), SSUB:sty('F2CB84',{b:1}), SMP:sty('F1F1F1'), TOT:sty('12232B',{b:1,c:'FFFFFF',sz:11}), CHK:sty('FFFFFF')};
-  Object.entries(kind).forEach(([r,k]) => ['B','C'].forEach(col => { const c = ws2[col+r]; if(c){ c.s = {...KS[k]}; if(col==='C'){ c.s = {...KS[k], alignment:{horizontal:'right'}}; c.z = '#,##0'; } } }));
+  Object.entries(kind).forEach(([r,k]) => ['B','C'].forEach(col => { const c = ws2[col+r]; if(c){ c.s = {...KS[k]}; if(col==='C'){ c.s = {...KS[k], alignment:{horizontal:'right'}}; c.z = (k==='IN'||k==='SUB') ? '#,##0;-#,##0;' : '#,##0'; } } }));
   ws2['B1'].s = {font:{name:'Arial',sz:12,bold:true}};
   ['B3','C3'].forEach(a => ws2[a].s = sty(HEADC,{b:1,c:'FFFFFF',h:'center'}));
-  ws2['D6'].s = sty('1F7A70',{b:1,c:'FFFFFF',h:'center'}); ws2['D'+s0].s = sty('C77D0A',{b:1,c:'FFFFFF',h:'center'});
+  ws2['D'+sIn].s = sty('1F7A70',{b:1,c:'FFFFFF',h:'center'}); ws2['D'+sSub].s = sty('C77D0A',{b:1,c:'FFFFFF',h:'center'});
+  ws2['!autofilter'] = {ref:'B3:C'+rT};
+  ws2['!rows'] = []; Object.entries(kind).forEach(([r,k]) => { if((k==='IN'||k==='SUB') && !(+ws2['C'+r].v > 0)) ws2['!rows'][r-1] = {hidden:true}; });   // buyers with no production start hidden; clear the filter to see them
   ws2['!ref'] = 'A1:E'+rC; ws2['!cols'] = [{wch:2},{wch:Math.max(...Object.keys(ws2).filter(k=>/^B\d+$/.test(k)).map(k=>String(ws2[k].v).length))+1},{wch:8},{wch:5},{wch:6}];
   const ws3 = XLSX.utils.aoa_to_sheet([['LIDA'],['DUKATI'],['SAILING'],['GS']]);
   ['lida','DUKATI','SAILING','GS'].forEach((k,i) => ws3['B'+(i+1)] = {t:'n', f:`SUMPRODUCT(--ISNUMBER(SEARCH("${k}",${D})),${I})`, v:0});
@@ -2194,6 +2216,7 @@ function wireHist(el){
       CAP.db = await window.claude.use('db'); CAP.downloads = await window.claude.use('downloads');
     }
   }catch(e){}
+  $('gSetBtn').style.display = CAP.db ? 'none' : '';
   startHistory();
   loadBuyerConfig();
   if(dashboard.style.display !== 'none') updateActions();
@@ -2299,7 +2322,7 @@ function buyerSettings(){
       return `<tr data-n="${esc(r.name)}"><td><b>${esc(r.name)}</b>${custom ? ' <span class="src today">added</span>' : (changed ? ' <span class="src history">changed</span>' : '')}</td>
         <td><select data-grp class="edit-input"><option value="IN"${r.grp==='IN'?' selected':''}>IN HOUSE</option><option value="SUB"${r.grp==='SUB'?' selected':''}>SUB CONTRACT</option></select></td>
         <td class="kw">${builtin ? '<span class="sec-note">' + esc(builtin) + (r.exact ? ' (exact)' : '') + '</span><br>' : ''}${(r.exact || asg) ? '' : `<input data-kw class="edit-input" placeholder="${custom ? 'keywords, comma separated' : 'extra keywords, comma separated'}" value="${esc(extra)}">`}</td>
-        <td>${custom ? '<button class="btn small" data-del>Remove</button>' : ''}</td></tr>`; }).join('');
+        <td>${(custom || asg) ? '<button class="btn small" data-del>Remove</button>' : ''}</td></tr>`; }).join('');
     box.innerHTML = `<div class="modal-box bset"><h3>Buyer list</h3>
       <p class="sec-note">A buyer's quantity is counted under the name that matches best. Add a new buyer, move one between IN HOUSE and SUB CONTRACT, or give a buyer more spellings. The built-in list is not changed; use “Reset my changes” to go back to it.</p>
       <div class="bset-add"><input id="bsName" class="edit-input" placeholder="New buyer name"><select id="bsGrp" class="edit-input"><option value="IN">IN HOUSE</option><option value="SUB">SUB CONTRACT</option></select><input id="bsKw" class="edit-input" placeholder="Keywords (optional, comma separated; the name is used if empty)"><button class="btn small primary" id="bsAdd">Add buyer</button></div>
@@ -2321,7 +2344,10 @@ function buyerSettings(){
       tr.querySelector('[data-grp]').onchange = e => { if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ STATE.assign[n] = e.target.value; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); }catch(x){} } else if(mineB) mineB.grp = e.target.value; else if(base && e.target.value === base.grp) delete STATE.custom.grp[n]; else STATE.custom.grp[n] = e.target.value; commit(); draw(); };
       const kw = tr.querySelector('[data-kw]'); if(kw) kw.onchange = e => { const k = kwList(e.target.value);
         if(mineB) mineB.keys = k.length ? k : [n]; else if(k.length) STATE.custom.keys[n] = k; else delete STATE.custom.keys[n]; commit(); draw(); };
-      const del = tr.querySelector('[data-del]'); if(del) del.onclick = () => { STATE.custom.added = STATE.custom.added.filter(b => b.name !== n); commit(); draw(); };
+      const del = tr.querySelector('[data-del]'); if(del) del.onclick = () => {
+        STATE.custom.added = STATE.custom.added.filter(b => b.name !== n);
+        if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ delete STATE.assign[n]; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(x){} }   // buyers added from the By-buyer assign box
+        commit(); draw(); toast('Removed ' + n); };
     });
   };
   draw();
@@ -2380,6 +2406,16 @@ async function sendToGoogle(){
 }
 $('gBtn').addEventListener('click', sendToGoogle);
 $('gSetBtn').addEventListener('click', googleSetup);
+
+/* floating download button: the "Final reports" options open in a panel above it */
+(function(){
+  const fab = $('fabBtn'), panel = $('actionsPanel');
+  const setPanel = on => { panel.classList.toggle('open', on); fab.classList.toggle('on', on); fab.setAttribute('aria-expanded', String(on)); };
+  fab.addEventListener('click', e => { e.stopPropagation(); setPanel(!panel.classList.contains('open')); });
+  panel.addEventListener('click', e => { const b = e.target.closest('button'); if(b && b.id !== 'gBtn' && b.id !== 'syncBtn') setTimeout(() => setPanel(false), 0); });
+  document.addEventListener('click', e => { if(!e.target.closest('#actionsPanel') && !e.target.closest('#fabBtn') && !e.target.closest('.modal')) setPanel(false); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') setPanel(false); });
+})();
 
 </script>
 
