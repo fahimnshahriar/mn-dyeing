@@ -468,10 +468,10 @@ const STATE = { parsed: [], sources: [], assign: {}, asked: '', unit: 1, unitCho
 };
 try { STATE.assign = JSON.parse(localStorage.getItem('frr_assign') || '{}'); } catch(e){}
 /* your own changes to the buyer list (kept apart from the built-in list): added buyers, IN/SUB switches, extra keywords */
-STATE.custom = {added:[], grp:{}, keys:{}};
-try { const c = JSON.parse(localStorage.getItem('frr_buyers') || 'null'); if(c) STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}}; } catch(e){}
+STATE.custom = {added:[], grp:{}, keys:{}, repl:{}, removed:[]};   // repl = keywords you typed in place of a built-in buyer's own; removed = built-in buyers you took out
+try { const c = JSON.parse(localStorage.getItem('frr_buyers') || 'null'); if(c) STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}, repl:c.repl||{}, removed:c.removed||[]}; } catch(e){}
 function effectiveRules(){
-  const R = RULES.map(x => ({...x, grp: STATE.custom.grp[x.name] || x.grp, keys:[...x.keys, ...(x.exact ? [] : (STATE.custom.keys[x.name]||[]))]}));
+  const R = RULES.filter(x => !STATE.custom.removed.includes(x.name)).map(x => ({...x, grp: STATE.custom.grp[x.name] || x.grp, keys: (!x.exact && STATE.custom.repl[x.name]) ? [...STATE.custom.repl[x.name]] : [...x.keys, ...(x.exact ? [] : (STATE.custom.keys[x.name]||[]))]}));
   STATE.custom.added.forEach(b => R.push({name:b.name, grp:b.grp, keys:[...b.keys], exact:false, custom:true}));
   Object.entries(STATE.assign).forEach(([name, v]) => {
     if(v==='IN' || v==='SUB') R.push({name, grp:v, keys:[name], exact:false});
@@ -1137,7 +1137,7 @@ function render(d){
   rp.unmapped.filter(r => r.buyer && r.buyer.trim()).forEach(r => { const k = r.buyer.trim().toUpperCase(); const o = un.get(k) || {q:0, rows:[]}; o.q += r.qty; o.rows.push(r); un.set(k, o); });
   if(un.size){
     const opts = '<option value="">— choose —</option><option value="IN">Add as new IN HOUSE buyer</option><option value="SUB">Add as new SUB CONTRACT buyer</option>' +
-      '<optgroup label="Same buyer as…">' + RULES.map(x => `<option value="MERGE:${x.name}">${x.name}</option>`).join('') + '</optgroup>';
+      '<optgroup label="Same buyer as…">' + RULES.filter(x => !STATE.custom.removed.includes(x.name)).map(x => `<option value="MERGE:${x.name}">${x.name}</option>`).join('') + '</optgroup>';
     ab.innerHTML = `<div class="assign"><h3>${un.size} buyer${un.size>1?'s':''} not recognised — where should ${un.size>1?'they':'it'} go?</h3>
       <p>These names match nothing in your CALCULATION list, so their kg is missing from the totals. Your answer is remembered for next time.</p>
       ${[...un].map(([n,o],i) => `<div class="assign-row"><span>${n}<small class="un-b">${o.rows.map(r => 'Batch ' + esc(r.batch||'—') + ' · MC ' + esc(r.mc) + ' · ' + esc(r.color||'—') + ' · ' + fmt(r.qty) + ' kg').join('<br>')}</small></span><span class="mono">${fmt(o.q)} kg</span><select data-buyer="${n.replace(/"/g,'&quot;')}">${opts}</select></div>`).join('')}
@@ -1534,7 +1534,7 @@ const cellStyle = (fill,o={}) => {
 const NOCACHE = () => !!window.__NOCACHE;     // test switch: leave cached values out so Excel/LibreOffice must calculate
 
 /* ---------- FINAL file (FINAL PRODUCTION REPORT: Sheet1 / CALCULATION / DONT DELETE) ---------- */
-function buildFinalXlsx(u){
+async function buildFinalXlsx(u){
   const rp = buyerReport(STATE.parsed.filter(r => r.unit===u && r.iso===STATE.reportIso)), LAST = 2000, rows = unitRows(u);
   const sty = (fill,o={}) => ({font:{name:'Arial',sz:o.sz||10,bold:!!o.b,color:{rgb:o.c||'000000'}}, fill:{patternType:'solid',fgColor:{rgb:fill}},
     alignment:{horizontal:o.h||'left',vertical:'center'}, border:{bottom:{style:'thin',color:{rgb:'D0D7DB'}}}});
@@ -1584,7 +1584,15 @@ function buildFinalXlsx(u){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws1, 'Sheet1'); XLSX.utils.book_append_sheet(wb, ws2, 'CALCULATION'); XLSX.utils.book_append_sheet(wb, ws3, 'DONT DELETE');
   wb.Workbook = {CalcPr:{fullCalcOnLoad:true}};
-  return {name:'FINAL PRODUCTION REPORT - ' + fileDate() + ' (UNIT-'+u+').xlsx', blob:aoaBlob(wb)};
+  let blob = aoaBlob(wb);
+  /* turn the filter arrows into a real applied filter (QTY not 0), the way the original file has it; if anything goes wrong the hidden rows still do the job */
+  try{
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer()), f = 'xl/worksheets/sheet2.xml'; let x = await zip.file(f).async('string');
+    x = x.replace(/<autoFilter ref="([^"]+)"\s*\/>/, '<autoFilter ref="$1"><filterColumn colId="1"><customFilters><customFilter operator="notEqual" val="0"/></customFilters></filterColumn></autoFilter>');
+    x = /<sheetPr[ >\/]/.test(x) ? x.replace(/<sheetPr(\s[^>]*?)?(\/?)>/, (m,a,c) => '<sheetPr' + (a||'') + ' filterMode="1"' + c + '>') : x.replace(/(<worksheet[^>]*>)/, '$1<sheetPr filterMode="1"/>');
+    zip.file(f, x); blob = await zip.generateAsync({type:'blob', mimeType:blob.type});
+  }catch(e){ console.error(e); }
+  return {name:'FINAL PRODUCTION REPORT - ' + fileDate() + ' (UNIT-'+u+').xlsx', blob};
 }
 
 /* ---------- ACTUAL file (ACTUAL FLOOR REPORT: Sheet1 / CATEGORY / BATCHMC) ---------- */
@@ -2292,16 +2300,16 @@ async function loadBuyerConfig(){
   if(!CAP.db){
     try{
       const j = await gGet({action:'settings'}), g = j.settings || {};
-      if(g.custom){ STATE.custom = {added:g.custom.added||[], grp:g.custom.grp||{}, keys:g.custom.keys||{}}; try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){} }
+      if(g.custom){ STATE.custom = {added:g.custom.added||[], grp:g.custom.grp||{}, keys:g.custom.keys||{}, repl:g.custom.repl||{}, removed:g.custom.removed||[]}; try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){} }
       if(g.assign){ STATE.assign = g.assign; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); }catch(e){} }
-      if(!g.custom && !g.assign && (STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.assign).length)) saveGoogleSettings();   // first time: send what this browser already has
+      if(!g.custom && !g.assign && (STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.assign).length)) saveGoogleSettings();   // first time: send what this browser already has
       if(dashboard.style.display !== 'none') render(aggregate());
     }catch(e){ console.error(e); }
     return;
   }
   try{
     const s = await CAP.db.collection('config').doc('buyers').get();
-    if(s.exists){ const c = JSON.parse(s.data().json); STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}};
+    if(s.exists){ const c = JSON.parse(s.data().json); STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}, repl:c.repl||{}, removed:c.removed||[]};
       try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); }catch(e){}
       if(dashboard.style.display !== 'none') render(aggregate()); }
   }catch(e){}
@@ -2316,15 +2324,14 @@ function buyerSettings(){
     const rows = rules.map(r => {
       const asg = !RULES.find(x => x.name === r.name) && !mine.has(r.name) && (STATE.assign[r.name] === 'IN' || STATE.assign[r.name] === 'SUB');
       const base = RULES.find(x => x.name === r.name), custom = mine.has(r.name);
-      const changed = custom || (base && (STATE.custom.grp[r.name] || (STATE.custom.keys[r.name]||[]).length));
-      const builtin = base ? base.keys.join(', ') : '';
-      const extra = custom ? STATE.custom.added.find(b => b.name === r.name).keys.join(', ') : (STATE.custom.keys[r.name]||[]).join(', ');
+      const changed = custom || (base && (STATE.custom.grp[r.name] || STATE.custom.repl[r.name] || (STATE.custom.keys[r.name]||[]).length));
+      const kwShown = custom ? STATE.custom.added.find(b => b.name === r.name).keys.join(', ') : (base && !base.exact ? r.keys.join(', ') : '');
       return `<tr data-n="${esc(r.name)}"><td><b>${esc(r.name)}</b>${custom ? ' <span class="src today">added</span>' : (changed ? ' <span class="src history">changed</span>' : '')}</td>
         <td><select data-grp class="edit-input"><option value="IN"${r.grp==='IN'?' selected':''}>IN HOUSE</option><option value="SUB"${r.grp==='SUB'?' selected':''}>SUB CONTRACT</option></select></td>
-        <td class="kw">${builtin ? '<span class="sec-note">' + esc(builtin) + (r.exact ? ' (exact)' : '') + '</span><br>' : ''}${(r.exact || asg) ? '' : `<input data-kw class="edit-input" placeholder="${custom ? 'keywords, comma separated' : 'extra keywords, comma separated'}" value="${esc(extra)}">`}</td>
-        <td>${(custom || asg) ? '<button class="btn small" data-del>Remove</button>' : ''}</td></tr>`; }).join('');
+        <td class="kw">${r.exact ? '<span class="sec-note">' + esc(base.keys.join(', ')) + ' (exact)</span>' : (asg ? '' : `<input data-kw class="edit-input" placeholder="keywords, comma separated" value="${esc(kwShown)}">`)}</td>
+        <td><button class="btn small" data-del>Remove</button></td></tr>`; }).join('');
     box.innerHTML = `<div class="modal-box bset"><h3>Buyer list</h3>
-      <p class="sec-note">A buyer's quantity is counted under the name that matches best. Add a new buyer, move one between IN HOUSE and SUB CONTRACT, or give a buyer more spellings. The built-in list is not changed; use “Reset my changes” to go back to it.</p>
+      <p class="sec-note">A buyer's quantity is counted under the name that matches best. Add a new buyer, move one between IN HOUSE and SUB CONTRACT, or give a buyer more spellings. Edit a buyer's keywords (a batch is counted under the buyer whose keyword matches its name best) or remove a buyer you don't need. Nothing is lost for good: “Reset my changes” brings back the built-in list.</p>
       <div class="bset-add"><input id="bsName" class="edit-input" placeholder="New buyer name"><select id="bsGrp" class="edit-input"><option value="IN">IN HOUSE</option><option value="SUB">SUB CONTRACT</option></select><input id="bsKw" class="edit-input" placeholder="Keywords (optional, comma separated; the name is used if empty)"><button class="btn small primary" id="bsAdd">Add buyer</button></div>
       <input id="bsFind" class="edit-input" placeholder="Search buyers" style="margin:10px 0;width:100%">
       <div class="tscroll bset-list"><table class="entry-table"><thead><tr><th>BUYER</th><th>GROUP</th><th>KEYWORDS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -2338,14 +2345,17 @@ function buyerSettings(){
       STATE.custom.added.push({name, grp:$('bsGrp').value, keys: kwList($('bsKw').value).length ? kwList($('bsKw').value) : [name]});
       commit(); draw(); toast('Added ' + name);
     };
-    $('bsReset').onclick = async () => { const ok = await askModal({title:'Reset buyer list', body:'<p>Remove all buyers you added and all changes you made to the list?</p>', ok:'Reset'}); if(!ok){ buyerSettings(); return; } STATE.custom = {added:[], grp:{}, keys:{}}; commit(); buyerSettings(); };
+    $('bsReset').onclick = async () => { const ok = await askModal({title:'Reset buyer list', body:'<p>Remove all buyers you added and all changes you made to the list?</p>', ok:'Reset'}); if(!ok){ buyerSettings(); return; } STATE.custom = {added:[], grp:{}, keys:{}, repl:{}, removed:[]}; commit(); buyerSettings(); };
     box.querySelectorAll('tbody tr').forEach(tr => {
       const n = tr.dataset.n, mineB = STATE.custom.added.find(b => b.name === n), base = RULES.find(x => x.name === n);
       tr.querySelector('[data-grp]').onchange = e => { if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ STATE.assign[n] = e.target.value; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); saveGoogleSettings(); }catch(x){} } else if(mineB) mineB.grp = e.target.value; else if(base && e.target.value === base.grp) delete STATE.custom.grp[n]; else STATE.custom.grp[n] = e.target.value; commit(); draw(); };
       const kw = tr.querySelector('[data-kw]'); if(kw) kw.onchange = e => { const k = kwList(e.target.value);
-        if(mineB) mineB.keys = k.length ? k : [n]; else if(k.length) STATE.custom.keys[n] = k; else delete STATE.custom.keys[n]; commit(); draw(); };
+        if(mineB) mineB.keys = k.length ? k : [n];
+        else if(base){ delete STATE.custom.keys[n]; if(k.length && k.join('|') !== base.keys.join('|')) STATE.custom.repl[n] = k; else delete STATE.custom.repl[n]; }
+        commit(); draw(); };
       const del = tr.querySelector('[data-del]'); if(del) del.onclick = () => {
         STATE.custom.added = STATE.custom.added.filter(b => b.name !== n);
+        if(base && !STATE.custom.removed.includes(n)){ STATE.custom.removed.push(n); delete STATE.custom.grp[n]; delete STATE.custom.keys[n]; delete STATE.custom.repl[n]; }
         if(STATE.assign[n] === 'IN' || STATE.assign[n] === 'SUB'){ delete STATE.assign[n]; try{ localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(x){} }   // buyers added from the By-buyer assign box
         commit(); draw(); toast('Removed ' + n); };
     });
