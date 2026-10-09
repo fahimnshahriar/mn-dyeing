@@ -262,6 +262,9 @@
   .actions.floating .btn{width:100%;text-align:left;}
   #dashboard{padding-bottom:70px;}
   body.view-only .fab{display:none !important;}
+  .warn-fab{position:fixed;left:calc(18px + env(safe-area-inset-left,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:40;align-items:center;gap:8px;background:#C96A4E;color:#fff;border:0;border-radius:999px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.45);}
+  body.view-only .warn-fab{display:none !important;}
+  .prob-day{margin:12px 0;} .prob-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:13px;} .prob-row small{color:#E6B29F;} .prob-quick{margin:10px 0;padding:10px;border:1px solid var(--amber-dim);border-radius:8px;}
   .actions{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:26px;display:flex;flex-direction:column;gap:10px;}
   .actions .act-title{font-size:13px;color:var(--ink-dim);}
   .actions .act-title b{color:var(--amber);font-family:'IBM Plex Mono',monospace;}
@@ -292,7 +295,7 @@
   table.cat-table tr.muted td{color:var(--ink-dim);}
   .ct-in{width:92px;min-width:0;text-align:right;}
   .src{font-family:'IBM Plex Sans',sans-serif;font-size:10px;padding:2px 7px;border-radius:10px;border:1px solid var(--line);color:var(--ink-dim);}
-  .src.today{border-color:var(--amber);color:var(--amber);} .src.history{border-color:var(--teal);color:var(--teal);} .src.bad{border-color:var(--red);color:#E6B29F;}
+  .src.fixed{border-color:#C96A4E;color:#E6B29F;} .src.today{border-color:var(--amber);color:var(--amber);} .src.history{border-color:var(--teal);color:var(--teal);} .src.bad{border-color:var(--red);color:#E6B29F;}
   .fin-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
   .fin-head h3{margin:0 0 4px;font-size:15px;} .fin-head h3 span{font-family:'IBM Plex Mono',monospace;color:var(--amber);font-weight:500;font-size:13px;margin-left:6px;}
   .note{font-size:12.5px;padding:9px 12px;border-radius:6px;border:1px solid var(--line);margin-bottom:8px;color:var(--ink-dim);line-height:1.5;}
@@ -408,6 +411,7 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
       <div class="kpi warn"><div class="num" id="kpiFlag">—</div><div class="lbl">batches held out for review</div></div>
     </div>
 
+    <button class="warn-fab" id="warnFab" style="display:none" title="Buyer or category wrong somewhere this month">&#9888; <span id="warnN"></span> to check</button>
     <div class="actions floating" id="actionsPanel">
       <div class="act-title" id="actTitle"></div>
       <div class="act-row">
@@ -471,6 +475,8 @@ const STATE = { parsed: [], sources: [], assign: {}, asked: '', unit: 1, unitCho
   fileCat: {1:{}, 2:{}}  // days read from a CATEGORY tab of an uploaded actual file
 };
 try { STATE.assign = JSON.parse(localStorage.getItem('frr_assign') || '{}'); } catch(e){}
+STATE.fixes = {};   // figures you typed over a day in the Month report: 'u1_2026-10-05' -> {B,C,D,F,H,J}
+try { STATE.fixes = JSON.parse(localStorage.getItem('frr_fixes') || '{}') || {}; } catch(e){}
 /* your own changes to the buyer list (kept apart from the built-in list): added buyers, IN/SUB switches, extra keywords */
 STATE.custom = {added:[], grp:{}, keys:{}, repl:{}, removed:[]};   // repl = keywords you typed in place of a built-in buyer's own; removed = built-in buyers you took out
 try { const c = JSON.parse(localStorage.getItem('frr_buyers') || 'null'); if(c) STATE.custom = {added:c.added||[], grp:c.grp||{}, keys:c.keys||{}, repl:c.repl||{}, removed:c.removed||[]}; } catch(e){}
@@ -739,8 +745,9 @@ function makeEntries(rows, col, from, to, day, srcName, xl){
     const capRaw = get(r,'CAP');
     const cap = capRaw === '' ? null : parseFloat(String(capRaw).replace(/[^0-9.]/g,''));
     const qtyRaw = get(r,'QTY');
-    const {num:qty, flagged} = parseQty(qtyRaw);
+    const {num:qty, flagged:qf} = parseQty(qtyRaw);
     const batchRaw = get(r,'BATCH');
+    const flagged = qf || /[()]/.test(String(batchRaw));   // brackets on the batch number OR the quantity = batch still running, not production
     const ent = {
       id: nextId++, mc, cap: (cap===null||isNaN(cap)) ? null : cap,
       buyer: String(get(r,'BUYER')).trim(), order: String(get(r,'ORDER')).trim(),
@@ -1205,8 +1212,8 @@ function render(d){
     'The buyer name on these batches contains two buyer names (for example ZXY and ZXY GILDEN). Each batch is counted only once, under the longest matching name shown in "Counted under". Nothing is double counted.',
     d.overlapRows, withDate([{key:'MC',label:'MC',mono:true},{key:'BATCH',label:'Batch',mono:true},{key:'BUYER',label:'Buyer on the sheet'},{key:'CHOSEN',label:'Counted under'},{key:'QTY',label:'Qty (kg)',mono:true}]));
   addGroup(groups,
-    'Bracketed quantities — not counted in totals',
-    `The QTY cell still has "(" or ")" around the number. That's the sheet's own marker for a batch not yet finished, so it's held out of the ${fmt(d.totalQty)} kg total above.`,
+    'Bracketed batches — not counted in totals',
+    `The batch number or the QTY cell has "(" or ")" around it. That's the sheet's own marker for a batch not yet finished, so it's held out of the ${fmt(d.totalQty)} kg total above.`,
     d.flaggedRows,
     withDate([{key:'MC',label:'MC',mono:true},{key:'BUYER',label:'Buyer'},{key:'BATCH',label:'Batch',mono:true},{key:'COLOR',label:'Colour',colour:true},{key:'QTY',label:'Qty (kg)',mono:true},{key:'RFT',label:'Status'},{key:'CATEGORY',label:'Category'}])
   );
@@ -1250,7 +1257,7 @@ function render(d){
     `Read from ${STATE.sources.length} file${STATE.sources.length>1?'s':''}: <span class="mono">${srcList}</span>. ` +
     `"Confirmed produced" excludes rows where the QTY cell was still bracketed <span class="mono">( )</span> ` +
     `— those aren't finished batches yet, so they're carried in the review list instead of the totals above.`;
-  renderDayBar(); renderFinal(); renderHistory(); renderEntry(); updateActions();
+  renderDayBar(); renderFinal(); renderHistory(); renderEntry(); updateActions(); updateWarn();
 }
 
 /* editCol, when given, replaces that column with a live input the user can
@@ -1364,6 +1371,8 @@ const reprocFor = (u, iso, auto) => STATE.reproc[reprocKey(u,iso)] !== undefined
 function figuresFor(u, k){
   const mk = (x, src) => ({iso:k, B:x.B, C:x.C, D:x.D, F:x.F, H:x.H, J:x.J, ok: x.C+x.D+x.F+x.J === x.B, src});
   const live = (rows, src) => { const s = summarize(rows, u); return s.hasData ? mk({B:s.B,C:s.C,D:s.D,F:s.F,J:s.J,H:reprocFor(u,k,s.Hauto)}, src) : null; };
+  const fx = STATE.fixes[reprocKey(u,k)];
+  if(fx) return mk(fx, 'fixed');   // your own figures for this day win over everything
   if(k === STATE.reportIso){ const r = live(dayRowsOf(u,k), 'today'); if(r) return r; }
   const h = STATE.hist[reprocKey(u,k)];
   if(h) return mk(h, 'history');
@@ -1397,7 +1406,7 @@ const n0 = x => Number(x).toLocaleString('en-US');
 /* ============================================================
    FINAL REPORT PANE (what the superior gets) — shown on screen
    ============================================================ */
-const SRC_LABEL = {today:'today', history:'saved', file:'from file', main:'main file'};
+const SRC_LABEL = {today:'today', history:'saved', file:'from file', main:'main file', fixed:'fixed by you', gap:'no data yet'};
 function renderFinal(){
   const el = $('finalPane'); if(!el) return;
   const u = STATE.unit, mr = monthReport(u);
@@ -1407,11 +1416,18 @@ function renderFinal(){
   const key = reprocKey(u, STATE.reportIso);
   const rows = mr.days.map(x => {
     const d = +x.iso.slice(8), today = x.iso === STATE.reportIso;
+    if(!x.src && STATE.editDays && !STATE.viewOnly && x.iso <= STATE.reportIso) x = {B:0,C:0,D:0,F:0,H:0,J:0, ok:true, src:'gap', ...x};   // a day with no data can be typed in
     if(!x.src) return `<tr class="${x.iso > STATE.reportIso ? 'future' : 'gap'}"><td>${dmy(x.iso)}</td><td colspan="9" class="ct-none">${x.iso > STATE.reportIso ? '' : 'no data'}</td><td></td></tr>`;
-    const h = today ? `<input class="edit-input ct-in" id="reprocInput"${STATE.viewOnly ? ' disabled' : ''} type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M). Counted from the sheet, change it if yours differs">` : n0(x.H);
+    const ed = STATE.editDays && !STATE.viewOnly, fixed = x.src === 'fixed', iso = x.iso;
+    const num = (f) => `<input class="edit-input ct-in ct-day" data-iso="${iso}" data-f="${f}" type="number" min="0" step="1" value="${x[f]}">`;
+    if(ed){ const cell = f => '<td>' + num(f) + '</td>';
+      return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td>${cell('B')}${cell('C')}${cell('D')}<td>${pct(x.D,x.B,1)}</td>${cell('F')}<td>${pct(x.F,x.B,2)}</td>${cell('H')}<td>${pct(x.H,x.B,2)}</td>${cell('J')}
+        <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${fixed ? ' <button class="btn small" data-reset="' + iso + '">Undo my fix</button>' : ''}</td></tr>`; }
+    const fixBtn = (!x.ok && STATE.main && STATE.main.dayMap[iso] && !today && !STATE.viewOnly) ? ` <button class="btn small" data-fixday="${iso}">Fix the batches</button>` : '';
+    const h = (today && !fixed) ? `<input class="edit-input ct-in" id="reprocInput"${STATE.viewOnly ? ' disabled' : ''} type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M). Counted from the sheet, change it if yours differs">` : n0(x.H);
     return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td><td>${n0(x.B)}</td><td>${n0(x.C)}</td><td>${n0(x.D)}</td><td>${pct(x.D,x.B,1)}</td>
       <td>${n0(x.F)}</td><td>${pct(x.F,x.B,2)}</td><td>${h}</td><td>${pct(x.H,x.B,2)}</td><td>${n0(x.J)}</td>
-      <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${x.ok?'':' <span class="src bad">check</span>'}</td></tr>`;
+      <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${x.ok?'':' <span class="src bad">check</span>'}${fixBtn}</td></tr>`;
   }).join('');
   const T = mr.tot, wd = mr.wd || 1, mt = v => (v/1000);
   const foot = `<tr class="ft"><td>SUM (MT)</td><td>${mt(T.B).toFixed(2)}</td><td>${mt(T.C).toFixed(2)}</td><td>${mt(T.D).toFixed(2)}</td><td></td><td>${mt(T.F).toFixed(2)}</td><td></td><td>${mt(T.H).toFixed(2)}</td><td></td><td>${mt(T.J).toFixed(2)}</td><td></td></tr>
@@ -1433,7 +1449,10 @@ function renderFinal(){
   const extra = `<tr class="muted"><td>SAMPLE</td><td colspan="5"></td><td>${n0(sm.J)}</td><td></td></tr>` +
     (cfg.skip.length ? `<tr class="muted"><td>OTHER MC</td><td colspan="5">MC ${cfg.skip.join(', ')}</td><td>${n0(sm.other)}</td><td></td></tr>` : '');
   el.innerHTML = `
-    <div class="fin-head"><div><h3>CATEGORY-WISE PRODUCTION REPORT <span>${MONTHS[mr.m-1]} - ${mr.y}</span></h3><div class="sec-note">UNIT ${u} · up to ${labelOf(STATE.reportIso)} · each earlier day uses saved history first, then your uploaded actual file, then the main file</div></div></div>
+    <div class="fin-head"><div><h3>CATEGORY-WISE PRODUCTION REPORT <span>${MONTHS[mr.m-1]} - ${mr.y}</span></h3><div class="sec-note">UNIT ${u} · up to ${labelOf(STATE.reportIso)} · each earlier day uses your fix, then saved history, then your uploaded actual file, then the main file</div></div>
+      <button class="btn small" id="monthProbBtn">List the month's problems</button>
+      ${STATE.viewOnly ? '' : `<label class="daysel"><input type="checkbox" id="editDays"${STATE.editDays ? ' checked' : ''}> Edit days</label>`}</div>
+    ${STATE.editDays && !STATE.viewOnly ? '<div class="note">Type new figures for any day. Month totals, the boss message and the exported reports follow. "Undo my fix" goes back to the original figures. For a day whose batches are wrong, use "Fix the batches" on that row (turn Edit days off) so the correction is made at the source.</div>' : ''}
     ${notes.join('')}
     <div class="tscroll"><table class="cat-table"><thead><tr><th>DATE</th><th>PRODUCTION QTY</th><th>COLOR</th><th>DPD</th><th>DPD (%)</th><th>WHITE / WASH</th><th>WHITE / WASH (%)</th><th>REPROCESS</th><th>R/M (%)</th><th>SAMPLE</th><th></th></tr></thead><tbody>${rows}${foot}</tbody></table></div>
     <div class="fin-head" style="margin-top:30px"><div><h3>MACHINE WISE PRODUCTION REPORT <span>${labelOf(STATE.reportIso)}</span></h3><div class="sec-note">UNIT ${u} · target ${TARGET_BATCH} batches per machine · batches are counted only when the quantity is finished</div></div></div>
@@ -1442,6 +1461,15 @@ function renderFinal(){
     <div class="pill-row" style="margin-top:14px"><div class="pill">TOTAL PRODUCTION <span class="n">${n0(sm.B)} kg</span></div>
       <div class="pill">AVG BATCH PER MC <span class="n">${sm.avgBatch.toFixed(2)}</span></div>
       <div class="pill">LOADING <span class="n">${sm.loading === null ? '—' : sm.loading.toFixed(1) + ' %'}</span></div></div>`;
+  const mpb = $('monthProbBtn'); if(mpb) mpb.onclick = openProblems;
+  const ed = $('editDays'); if(ed) ed.onchange = () => { STATE.editDays = ed.checked; renderFinal(); };
+  el.querySelectorAll('.ct-day').forEach(inp => inp.onchange = () => {
+    const iso = inp.dataset.iso, key = reprocKey(u, iso), base = figuresFor(u, iso), v = inp.value.trim();
+    if(v === '' || isNaN(+v)){ renderFinal(); return; }
+    const fx = STATE.fixes[key] || {B:base.B||0, C:base.C||0, D:base.D||0, F:base.F||0, H:base.H||0, J:base.J||0};
+    fx[inp.dataset.f] = Math.max(0, Math.round(+v)); STATE.fixes[key] = fx; persistBuyers(); renderFinal(); });
+  el.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => { delete STATE.fixes[reprocKey(u, b.dataset.reset)]; persistBuyers(); renderFinal(); });
+  el.querySelectorAll('[data-fixday]').forEach(b => b.onclick = () => { currentView = 'flags'; loadMainDay(b.dataset.fixday); });
   const inp = $('reprocInput');
   if(inp){
     inp.addEventListener('change', () => {
@@ -1864,9 +1892,9 @@ function buildMessage(){
   const Mon = mon.charAt(0) + mon.slice(1).toLowerCase(), mt = kg => (kg/1000).toFixed(3) + 'MT';
   const out = [];
   [1,2].forEach(u => { const sm = summarize(reportRows(u), u); if(!sm.hasData) return;
-    const mr = monthReport(u), wd = mr ? mr.wd : 0;
-    const L = ['UNIT-0' + u, 'Dear Sir,', 'Dyeing Production Date : ' + labelOf(iso), '', 'Total Production : ' + mt(sm.B), '',
-      'White/Wash : ' + (sm.B ? (sm.F/sm.B*100).toFixed(2) : '0') + '%', 'DPD : ' + (sm.B ? (sm.D/sm.B*100).toFixed(1) : '0') + '%',
+    const mr = monthReport(u), wd = mr ? mr.wd : 0, fg = figuresFor(u, iso), q = (fg && fg.src === 'fixed') ? fg : sm;   // your own fix for the day, if any
+    const L = ['UNIT-0' + u, 'Dear Sir,', 'Dyeing Production Date : ' + labelOf(iso), '', 'Total Production : ' + mt(q.B), '',
+      'White/Wash : ' + (q.B ? (q.F/q.B*100).toFixed(2) : '0') + '%', 'DPD : ' + (q.B ? (q.D/q.B*100).toFixed(1) : '0') + '%',
       'Avg Loading : ' + (sm.loading === null ? '—' : sm.loading.toFixed(1)) + '%', 'AVG Batch/M/c : ' + sm.avgBatch.toFixed(2)];
     if(mr){ L.push('', Mon + ' Total : ' + mt(mr.tot.B), Mon + ' (AVG) : ' + (wd ? mt(mr.tot.B/wd) : '—'), 'Total Working Day (' + Mon + ') : ' + pad2(wd)); }
     out.push(L.join('\n')); });
@@ -2224,7 +2252,7 @@ async function loadGoogleHist(){
 }
 const pack = r => ({m:r.mc, c:r.cap ?? null, b:r.buyer, o:r.order, n:r.batchRaw ?? '', g:r.color, f:r.fabric, q:r.qtyRaw ?? '', l:r.loadTime, u:r.unloadTime, d:r.duration, r:r.rft, k:r.category, s:r.shade});
 function unpack(p, day, src){
-  const {num, flagged} = parseQty(p.q);
+  const {num, flagged:qf} = parseQty(p.q), flagged = qf || /[()]/.test(String(p.n ?? ''));
   return {id:nextId++, mc:String(p.m), cap:p.c, buyer:p.b||'', order:p.o||'', batch:String(p.n??'').trim(), batchRaw:p.n, qty:num, qtyRaw:p.q, flagged,
     loadTime:p.l||'', unloadTime:p.u||'', duration:p.d||'', rft:p.r||'', category:p.k||'', color:p.g||'', fabric:p.f||'', shade:p.s||'',
     date:labelOf(day), iso:day, sourceFile:src};
@@ -2275,6 +2303,7 @@ async function syncOnlineLog(){
 }
 $('syncBtn').addEventListener('click', syncOnlineLog);
 async function openHistoryDay(iso){
+  if(STATE.main && STATE.main.dayMap[iso]){ loadMainDay(iso); return; }
   if(!histOn()) return;
   try{
     const entries = [];
@@ -2312,7 +2341,7 @@ function historyInto(el, pfx){
   if(!histOn()){ el.innerHTML = '<div class="empty">History is kept on the hosted page. Open the published link to save each day and look back unit by unit. A local copy of this file cannot store history.</div>'; return; }
   const u = STATE.unit;
   const unitSw = `<div class="view-tabs" style="margin:0">${[1,2].map(x => `<button class="view-tab${x===u?' active':''}" data-unit="${x}">UNIT ${x}</button>`).join('')}</div>`;
-  const months = [...new Set(Object.values(STATE.hist).filter(h => h.unit === u).map(h => h.iso.slice(0,7)))].sort();
+  const months = [...new Set([...Object.values(STATE.hist).filter(h => h.unit === u).map(h => h.iso.slice(0,7)), ...((STATE.main && STATE.main.days) ? STATE.main.days.map(d => d.iso.slice(0,7)) : [])])].sort();
   const cur = /^\d{4}-/.test(STATE.reportIso) ? STATE.reportIso.slice(0,7) : '';
   if(cur && !months.includes(cur)) months.push(cur);
   months.sort();
@@ -2321,14 +2350,15 @@ function historyInto(el, pfx){
   if(!histMonth){ el.innerHTML = `<div class="hist-top">${unitSw}<div class="sec-note">${STATE.histErr ? esc(STATE.histErr) : 'Nothing saved yet. Load the main file and press “Send to Google” to keep every day here.'}</div>${mainBtn}<span class="sec-note" data-prog="1"></span></div>`; wireHist(el); return; }
   const [y,m] = histMonth.split('-').map(Number), n = daysInMonth(y,m);
   const rows = []; let sums = {B:0,C:0,D:0,F:0,H:0,J:0}, cnt = 0, maxB = 1;
-  for(let d=1; d<=n; d++){ const iso = isoOf(y,m,d), h = STATE.hist[reprocKey(u,iso)]; rows.push({iso, h}); if(h){ cnt++; Object.keys(sums).forEach(k => sums[k] += h[k]); maxB = Math.max(maxB, h.B); } }
+  for(let d=1; d<=n; d++){ const iso = isoOf(y,m,d); let h = STATE.hist[reprocKey(u,iso)]; if(!h){ const f = figuresFor(u, iso); if(f && f.src) h = f; }   // days not saved online still show if they are in the loaded main file
+    rows.push({iso, h}); if(h){ cnt++; Object.keys(sums).forEach(k => sums[k] += h[k]); maxB = Math.max(maxB, h.B); } }
   const bars = rows.map((r,i) => { const h = r.h; if(!h) return `<div class="hb"><div class="hb-stack"></div><span>${i+1}</span></div>`;
     const seg = (v,c) => `<i style="height:${(v/maxB*100).toFixed(1)}%;background:${c}"></i>`;
     return `<div class="hb" title="${labelOf(r.iso)} · ${n0(h.B)} kg"><div class="hb-stack">${seg(h.J,'#9FB0B4')}${seg(h.F,'#C9C2B2')}${seg(h.D,'#E0A339')}${seg(h.C,'#5FA8A0')}</div><span>${i+1}</span></div>`; }).join('');
   const trs = rows.map(r => { const h = r.h;
     if(!h) return `<tr class="gap"><td>${dmy(r.iso)}</td><td colspan="8" class="ct-none">not saved</td></tr>`;
     return `<tr class="${h.ok ? '' : 'wrong'}"><td>${dmy(r.iso)}</td><td>${n0(h.B)}</td><td>${n0(h.C)}</td><td>${n0(h.D)}</td><td>${n0(h.F)}</td><td>${n0(h.H)}</td><td>${n0(h.J)}</td>
-      <td>${h.ok ? '<span class="src history">OK</span>' : '<span class="src bad">check</span>'}</td><td><button class="btn small" data-open="${r.iso}">Open</button></td></tr>`; }).join('');
+      <td>${h.ok ? '<span class="src history">OK</span>' : '<span class="src bad">check</span>'}${h.src && h.src !== 'history' ? ' <span class="src">' + (SRC_LABEL[h.src]||'') + '</span>' : ''}</td><td><button class="btn small" data-open="${r.iso}">Open</button></td></tr>`; }).join('');
   el.innerHTML = `<div class="hist-top">${unitSw}<label class="daysel">Month <select data-month="1">${months.map(mm => { const [yy,mo] = mm.split('-').map(Number); return `<option value="${mm}"${mm===histMonth?' selected':''}>${MONTHS[mo-1]} ${yy}</option>`; }).join('')}</select></label>
       <span class="sec-note">UNIT ${u} · ${cnt} day${cnt===1?'':'s'} saved · ${n0(sums.B)} kg</span>${mainBtn}<span class="sec-note" data-prog="1"></span></div>
     <div class="hist-chart" aria-label="Daily production">${bars}</div>
@@ -2363,6 +2393,56 @@ function wireHist(el){
    CHECK ENTRY — today's rows laid out like the sheet, each with its problems
    ============================================================ */
 let entryOnlyBad = false;
+$('warnFab').addEventListener('click', openProblems);
+/* ---------- what counts as a real problem: buyer wrong, category wrong (finished batches that have a batch number and a quantity) ---------- */
+function problemsFor(rows){
+  const rp = buyerReport(rows), unm = new Set(rp.unmapped), out = [];
+  rows.forEach(r => {
+    const smp = /SAMPLE/i.test(r.mc) || /^\s*(MC\s*)?(WASH|WASHING)\b/i.test(r.buyer||'');
+    if(!r.mc || smp || r.flagged || /[()]/.test(r.batch||'') || !String(r.batch||'').trim() || r.qty === null || r.qty === undefined) return;
+    const why = [];
+    if(!String(r.buyer||'').trim()) why.push('buyer missing'); else if(unm.has(r)) why.push('buyer "' + r.buyer.trim() + '" is not in the list');
+    const cat = String(r.category||'').trim();
+    if(!cat) why.push('category missing'); else if(!KNOWN_CATEGORIES.includes(cat.toUpperCase()) && !/COLOR|DPD|WHITE|WASH|SCOUR|RFD/i.test(cat)) why.push('category "' + cat + '" not known');
+    if(why.length) out.push({row:r, why});
+  });
+  return out;
+}
+/* every day of the report month that is loaded (main file or the day on screen), both units */
+function monthProblems(){
+  const iso0 = STATE.reportIso; if(!/^\d{4}-\d\d-\d\d$/.test(iso0)) return [];
+  const [y,m] = iso0.split('-').map(Number), n = daysInMonth(y,m), out = [];
+  for(let d=1; d<=n; d++){ const iso = isoOf(y,m,d); if(iso > iso0) break;
+    [1,2].forEach(u => {
+      const live = STATE.parsed.filter(r => r.iso === iso && r.unit === u);
+      const rows = live.length ? live : ((STATE.main && STATE.main.dayMap[iso]) ? STATE.main.dayMap[iso].entries.filter(e => e.unit === u) : []);
+      problemsFor(rows).forEach(pr => out.push({iso, unit:u, ...pr}));
+    }); }
+  return out;
+}
+function updateWarn(){
+  const b = $('warnFab'); if(!b) return;
+  const n = STATE.parsed.length || STATE.main ? monthProblems().length : 0;
+  b.style.display = n ? 'flex' : 'none'; $('warnN').textContent = n;
+}
+function openProblems(){
+  const list = monthProblems();
+  let box = $('probBox'); if(!box){ box = document.createElement('div'); box.id = 'probBox'; box.className = 'modal'; document.body.appendChild(box); }
+  box.style.display = 'flex';
+  const days = [...new Set(list.map(x => x.iso))];
+  const unknownBuyers = new Map(); list.forEach(x => x.why.forEach(w => { if(/is not in the list/.test(w)){ const k = String(x.row.buyer).trim().toUpperCase(); unknownBuyers.set(k, (unknownBuyers.get(k)||0) + 1); } }));
+  const body = list.length ? days.map(iso => `<div class="prob-day"><b>${labelOf(iso)}</b>${list.filter(x => x.iso === iso).map(x => `<div class="prob-row"><span>UNIT ${x.unit} · MC ${esc(x.row.mc)} · batch ${esc(x.row.batch)} · ${esc(x.row.buyer||'—')} · ${esc(x.row.category||'—')} · ${n0(x.row.qty)} kg<br><small>${x.why.map(esc).join('; ')}</small></span><button class="btn small" data-go="${iso}" data-u="${x.unit}">Fix</button></div>`).join('')}</div>`).join('')
+    : '<div class="empty">No buyer or category problems found in the loaded days of this month.</div>';
+  const quick = unknownBuyers.size ? `<div class="prob-quick"><b>Buyer not in the list — add it, or tell me which existing buyer it is</b>${[...unknownBuyers].map(([k,c]) => `<div class="prob-row"><span>${esc(k)} <small>(${c} batch${c>1?'es':''})</small></span><span><button class="btn small" data-add="IN" data-n="${esc(k)}">Add as IN HOUSE</button> <button class="btn small" data-add="SUB" data-n="${esc(k)}">Add as SUB CONTRACT</button><br><select class="edit-input" data-same="${esc(k)}" style="margin-top:6px;max-width:220px"><option value="">Same as an existing buyer…</option>${effectiveRules().map(r => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}</select></span></div>`).join('')}</div>` : '';
+  box.innerHTML = `<div class="modal-box bset"><h3>Problems this month · buyer or category wrong</h3><p class="sec-note">${list.length} batch${list.length===1?'':'es'} in ${days.length} day${days.length===1?'':'s'} (days loaded from the main file or on screen). Batches with no batch number or no quantity, and bracketed batches, are not counted as problems.</p>${quick}<div class="bset-list">${body}</div><div class="modal-actions"><button class="btn small primary" id="probClose">Close</button></div></div>`;
+  $('probClose').onclick = () => { box.style.display = 'none'; };
+  box.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { STATE.assign[b.dataset.n] = b.dataset.add; persistBuyers(); render(aggregate()); openProblems(); });
+  box.querySelectorAll('[data-same]').forEach(sel => sel.onchange = () => { if(!sel.value) return; STATE.assign[sel.dataset.same] = 'MERGE:' + sel.value; persistBuyers(); render(aggregate()); openProblems(); });   // this spelling is counted under the chosen buyer, on every day
+  box.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
+    const iso = b.dataset.go; box.style.display = 'none'; STATE.unit = +b.dataset.u; STATE.unitChosen = true; entryOnlyBad = true;
+    if(iso === STATE.reportIso){ render(aggregate()); switchView('entry'); }
+    else if(STATE.main && STATE.main.dayMap[iso]){ currentView = 'entry'; loadMainDay(iso); } });
+}
 function entryIssues(rows, u){
   const rp = buyerReport(rows), unm = new Set(rp.unmapped);
   const norm = b => String(b||'').replace(/[()\s]/g,'').toUpperCase();
@@ -2371,7 +2451,7 @@ function entryIssues(rows, u){
   rows.forEach(r => {
     const p = [], smp = /SAMPLE/i.test(r.mc) || /^\s*(MC\s*)?(WASH|WASHING)\b/i.test(r.buyer||'');   // sample and machine-wash lines carry no batch
     const open = /[()]/.test(r.batch||'') || r.flagged;   // brackets = batch still running: nothing to enter yet
-    if(!smp && !open){
+    if(!smp && !open && String(r.batch||'').trim() && r.qty !== null && r.qty !== undefined){   // no batch number or no quantity: nothing was produced, not a problem
       if(!String(r.batch||'').trim()) p.push('batch number missing');
       else if(cnt.get(norm(r.batch)) > 1) p.push('same batch number on ' + cnt.get(norm(r.batch)) + ' rows');
       if(!String(r.buyer||'').trim()) p.push('buyer missing');
@@ -2425,13 +2505,13 @@ const BDIRTY = 'frr_buyers_dirty';
 const setDirty = v => { try{ v ? localStorage.setItem(BDIRTY, '1') : localStorage.removeItem(BDIRTY); }catch(e){} };
 const isDirty = () => { try{ return !!localStorage.getItem(BDIRTY); }catch(e){ return false; } };
 function persistBuyers(){
-  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(e){}
+  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); localStorage.setItem('frr_fixes', JSON.stringify(STATE.fixes)); }catch(e){}
   setDirty(true); pushBuyers();
 }
 function pushBuyers(){
   clearTimeout(gSetTimer);
   gSetTimer = setTimeout(async () => {
-    const mine = ++pushSeq, payload = {custom:STATE.custom, assign:STATE.assign};
+    const mine = ++pushSeq, payload = {custom:STATE.custom, assign:STATE.assign, fixes:STATE.fixes};
     try{
       if(CAP.db){ await CAP.db.collection('config').doc('buyers').set({json: JSON.stringify(payload)}); }
       else {
@@ -2445,26 +2525,27 @@ function pushBuyers(){
   }, 300);
 }
 const normCustom = c => ({added:(c&&c.added)||[], grp:(c&&c.grp)||{}, keys:(c&&c.keys)||{}, repl:(c&&c.repl)||{}, removed:(c&&c.removed)||[]});
-function applyBuyerConfig(custom, assign){
-  const before = JSON.stringify([STATE.custom, STATE.assign]);
+function applyBuyerConfig(custom, assign, fixes){
+  const before = JSON.stringify([STATE.custom, STATE.assign, STATE.fixes]);
   if(custom) STATE.custom = normCustom(custom);
   if(assign) STATE.assign = assign;
-  if(JSON.stringify([STATE.custom, STATE.assign]) === before) return;   // nothing new from the other devices
-  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); }catch(e){}
+  if(fixes) STATE.fixes = fixes;
+  if(JSON.stringify([STATE.custom, STATE.assign, STATE.fixes]) === before) return;   // nothing new from the other devices
+  try{ localStorage.setItem('frr_buyers', JSON.stringify(STATE.custom)); localStorage.setItem('frr_assign', JSON.stringify(STATE.assign)); localStorage.setItem('frr_fixes', JSON.stringify(STATE.fixes)); }catch(e){}
   if(dashboard.style.display !== 'none') render(aggregate());
 }
 async function loadBuyerConfig(){
-  const hasLocal = () => STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.assign).length;
+  const hasLocal = () => STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.assign).length || Object.keys(STATE.fixes).length;
   try{
-    let c = null, a = null, found = false;
+    let c = null, a = null, fx = null, found = false;
     if(CAP.db){
       const s = await CAP.db.collection('config').doc('buyers').get();
-      if(s.exists){ const o = JSON.parse(s.data().json); found = true; if(o.custom){ c = o.custom; a = o.assign; } else c = o; }   // old copies held only the custom part
+      if(s.exists){ const o = JSON.parse(s.data().json); found = true; if(o.custom){ c = o.custom; a = o.assign; fx = o.fixes; } else c = o; }   // old copies held only the custom part
     } else {
-      const j = await gGet({action:'settings'}), g = j.settings || {}; c = g.custom || null; a = g.assign || null; found = !!(c || a);
+      const j = await gGet({action:'settings'}), g = j.settings || {}; c = g.custom || null; a = g.assign || null; fx = g.fixes || null; found = !!(c || a || fx);
     }
     if(isDirty() || (!found && hasLocal())){ pushBuyers(); return; }   // this browser has newer changes (or the online copy is empty): send them up, keep them
-    if(found){ const bs = $('bset'); if(bs && bs.style.display !== 'none') return; applyBuyerConfig(c, a); }   // not while the Buyer list window is open
+    if(found){ const bs = $('bset'); if(bs && bs.style.display !== 'none') return; applyBuyerConfig(c, a, fx); }   // not while the Buyer list window is open
   }catch(e){ console.error(e); }
 }
 /* the buyer list syncs by itself: when the page opens, every 30 seconds, and whenever you come back to the tab */
