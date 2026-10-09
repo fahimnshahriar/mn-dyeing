@@ -414,6 +414,9 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
         <button class="btn small primary" id="actualBtn">Actual file · .xlsx</button>
         <button class="btn small primary" id="exportBtn">Final file · .xlsx</button>
         <button class="btn small" id="pngBtn">Buyer report · .png</button>
+        <button class="btn small" id="catBothPngBtn">Category report, Unit 1 + 2 · .png</button>
+        <button class="btn small" id="catBothXlsxBtn">Category report, Unit 1 + 2 · .xlsx</button>
+        <button class="btn small" id="pngBothBtn">Buyer report, Unit 1 + 2 combined · .png</button>
         <button class="btn small" id="pngMcBtn">MC report · .png</button>
         <button class="btn small" id="bothBtn">Everything, both units · .zip</button>
         <button class="btn small" id="mainFixBtn" style="display:none">Corrected main file</button>
@@ -1479,6 +1482,7 @@ function updateActions(){
   $('syncBtn').title = CAP.db ? 'Save every day of this main file to the online log, so others can open the earlier days' : 'The online log works on the published link.';
   $('saveDayBtn').title = CAP.db ? 'Save this day, both units, to the online history' : 'History is kept on the hosted page. Open the published link to use it.';
   [ 'actualBtn','exportBtn','pngBtn','pngMcBtn' ].forEach(id => $(id).disabled = !summarize(reportRows(u), u).hasData);
+  ['pngBothBtn','catBothPngBtn','catBothXlsxBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
 }
 
 /* ============================================================
@@ -1766,6 +1770,53 @@ function buildBuyerPng(u){
   return tablePng({title:'UNIT - '+u, sub:'BUYER WISE PRODUCTION REPORT', date:dateLabel(), head:['BUYER','QTY (KG)'], right:[1], rows, foot:{cells:['TOTAL', n0(rp.total)]},
     file:'BUYER WISE REPORT - '+fileDate()+' (UNIT-'+u+').png'});
 }
+/* both floors in one buyer-wise picture: UNIT 1, UNIT 2 and the combined total side by side */
+function buildBuyerPngBoth(){
+  const r1 = reportRows(1), r2 = reportRows(2);
+  const p1 = buyerReport(r1), p2 = buyerReport(r2), pa = buyerReport(r1.concat(r2));
+  const rows = [];
+  const grp = (name, g, dark, mid, light) => {
+    const idx = pa.lines.map((l,i) => i).filter(i => pa.lines[i].grp === g && pa.lines[i].qty > 0);
+    const q = (p,i) => p.lines[i].qty, tot = p => g === 'IN' ? p.inQty : p.subQty;
+    rows.push({cells:[name, n0(tot(p1)), n0(tot(p2)), n0(tot(pa))], bg:dark, bold:1, fg:'#fff'});
+    idx.forEach((i,k) => rows.push({cells:[pa.lines[i].name, q(p1,i) ? n0(q(p1,i)) : '', q(p2,i) ? n0(q(p2,i)) : '', n0(q(pa,i))], bg:k%2?'#fff':light}));
+    rows.push({cells:['SUM OF '+name, n0(tot(p1)), n0(tot(p2)), n0(tot(pa))], bg:mid, bold:1});
+  };
+  grp('IN HOUSE', 'IN', '#1F7A70', '#9ED3CB', '#E6F4F1'); grp('SUB CONTRACT', 'SUB', '#C77D0A', '#F2CB84', '#FFF3DC');
+  rows.push({cells:['SAMPLE', n0(p1.sample), n0(p2.sample), n0(pa.sample)], bg:'#F1F1F1'});
+  return tablePng({title:'UNIT 1 + UNIT 2', sub:'BUYER WISE PRODUCTION REPORT (COMBINED)', date:dateLabel(), head:['BUYER','UNIT 1','UNIT 2','TOTAL (KG)'], right:[1,2,3], rows,
+    foot:{cells:['TOTAL', n0(p1.total), n0(p2.total), n0(pa.total)]}, file:'BUYER WISE REPORT - '+fileDate()+' (UNIT-1+2).png'});
+}
+/* both floors, category-wise, one row per unit (the layout of the CATEGORY tab, units stacked) */
+function categoryBothData(){
+  const H = ['DATE','UNIT','PRODUCTION QTY','COLOR','DPD','DPD (%)','WHITE / WASH','WHITE / WASH (%)','SAMPLE','LOADING %','BATCH/MC'];
+  const date = labelOf(STATE.reportIso), body = [];
+  const T = {B:0,C:0,D:0,F:0,J:0};
+  [1,2].forEach(u => { const sm = summarize(reportRows(u), u); if(!sm.hasData) return;
+    ['B','C','D','F','J'].forEach(k => T[k] += sm[k]);
+    body.push([date, 'UNIT '+u, sm.B, sm.C, sm.D, pct(sm.D,sm.B,1), sm.F, pct(sm.F,sm.B,2), sm.J, sm.loading === null ? '' : sm.loading.toFixed(2)+'%', sm.avgBatch.toFixed(2)]); });
+  const foot = ['', 'TOTAL', T.B, T.C, T.D, pct(T.D,T.B,1), T.F, pct(T.F,T.B,2), T.J, '', ''];
+  const title = 'CATEGORY-WISE PRODUCTION REPORT (' + (/^\d{4}-/.test(STATE.reportIso) ? (+STATE.reportIso.slice(8)) + ' ' + MONTHS[+STATE.reportIso.slice(5,7)-1] + '- ' + STATE.reportIso.slice(0,4) : date) + ')';
+  return {H, body, foot, title};
+}
+function buildCategoryBothPng(){
+  const d = categoryBothData();
+  return tablePng({title:'UNIT 1 + UNIT 2', sub:d.title, date:dateLabel(), head:d.H, right:[2,3,4,5,6,7,8,9,10],
+    rows:d.body.map((r,i) => ({cells:r.map((v,c) => typeof v === 'number' ? n0(v) : v), bg:i%2?'#fff':'#'+LIGHT, bold:1})),
+    foot:{cells:d.foot.map(v => typeof v === 'number' ? n0(v) : v)}, file:'CATEGORY REPORT - '+fileDate()+' (UNIT-1+2).png'});
+}
+function buildCategoryBothXlsx(){
+  const d = categoryBothData();
+  const ws = XLSX.utils.aoa_to_sheet([[d.title],d.H,...d.body,d.foot]);
+  const hs = cellStyle('D9E2F3',{b:1,sz:10,wrap:1});
+  ws['A1'].s = cellStyle('A9D08E',{b:1,sz:12}); ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:10}}];
+  d.H.forEach((h,c) => ws[XLSX.utils.encode_cell({r:1,c})].s = hs);
+  [...d.body, d.foot].forEach((row,i) => row.forEach((v,c) => { const a = XLSX.utils.encode_cell({r:i+2,c}); const cell = ws[a] || (ws[a] = {t:'s',v:''}); cell.s = cellStyle(null,{b:1,sz:11}); }));
+  ws['!cols'] = d.H.map((h,c) => ({wch: c===0 ? 12 : Math.max(9, h.length+2)}));
+  ws['!rows'] = [{hpt:22},{hpt:32}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'CATEGORY');
+  return {name:'CATEGORY REPORT - '+fileDate()+' (UNIT-1+2).xlsx', blob:aoaBlob(wb)};
+}
 function buildMcPng(u){
   const rows = unitRows(u).filter(r => r.qty !== null);
   const tr = rows.map(r => { const mc = parseInt(r.mc,10);
@@ -1844,6 +1895,18 @@ $('actualBtn').addEventListener('click', () => runExport(async u => buildActualX
 $('exportBtn').addEventListener('click', () => runExport(async u => buildFinalXlsx(u)));
 $('pngBtn').addEventListener('click', () => runExport(u => buildBuyerPng(u)));
 $('pngMcBtn').addEventListener('click', () => runExport(u => buildMcPng(u)));
+const bothRun = fn => async () => { if(busy) return; busy = true;
+  try{ aggregate(); const f = await fn(); await saveFile(f.name, f.blob); }
+  catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
+  finally{ busy = false; } };
+$('catBothPngBtn').addEventListener('click', bothRun(buildCategoryBothPng));
+$('catBothXlsxBtn').addEventListener('click', bothRun(buildCategoryBothXlsx));
+$('pngBothBtn').addEventListener('click', async () => {
+  if(busy) return; busy = true;
+  try{ aggregate(); const f = await buildBuyerPngBoth(); await saveFile(f.name, f.blob); }
+  catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
+  finally{ busy = false; }
+});
 
 /* everything, both units, one zip so the viewer is asked to save only once */
 $('bothBtn').addEventListener('click', async () => {
@@ -1854,7 +1917,7 @@ $('bothBtn').addEventListener('click', async () => {
   if(!window.JSZip){ toast('The zip library did not load. Export the files one by one.', 'err'); return; }
   const lines = todo.map(u => { const rows = unitRows(u); const mcs = [...new Set(rows.filter(r=>unitOfMc(r.mc)).map(r=>+r.mc))].sort((a,b)=>a-b); const sm = summarize(reportRows(u), u);
     return `<p><b>UNIT ${u}</b> (MC ${UNIT_RANGE[u]})<br>Machines: ${mcs.join(', ')}<br>Production: ${n0(sm.B)} kg · category check ${sm.ok ? '<span class="m-ok">OK</span>' : '<span class="m-bad">WRONG</span>'}</p>`; }).join('');
-  const go = await askModal({title:'Export everything · ' + reportLabel(), body: lines + '<p>One zip with, for each unit: actual file, final file, buyer picture, machine picture.</p>' + (skipped.length ? '<p class="sec-note">UNIT ' + skipped.join(' and ') + ' has no rows, skipped.</p>' : ''), ok:'Export zip'});
+  const go = await askModal({title:'Export everything · ' + reportLabel(), body: lines + '<p>One zip with, for each unit: actual file, final file, buyer picture, machine picture, plus the combined Unit 1 + 2 buyer and category reports.</p>' + (skipped.length ? '<p class="sec-note">UNIT ' + skipped.join(' and ') + ' has no rows, skipped.</p>' : ''), ok:'Export zip'});
   if(!go) return;
   busy = true;
   try{
@@ -1864,6 +1927,7 @@ $('bothBtn').addEventListener('click', async () => {
       const folder = zip.folder('UNIT-' + u);
       for(const b of [buildActualXlsx, buildFinalXlsx, buildBuyerPng, buildMcPng]){ const f = await b(u); folder.file(f.name, f.blob); }
     }
+    if(todo.length > 1){ for(const b of [buildBuyerPngBoth, buildCategoryBothPng, buildCategoryBothXlsx]){ const f = await b(); zip.file(f.name, f.blob); } }
     const blob = await zip.generateAsync({type:'blob'});
     await saveFile('FINAL PACKAGE - ' + fileDate() + '.zip', blob);
   }catch(e){ console.error(e); toast('Export failed: ' + (e && e.message || e), 'err'); }
