@@ -166,6 +166,15 @@
   .assign{background:rgba(201,106,78,0.08);border:1px solid rgba(201,106,78,0.4);border-radius:8px;padding:14px 16px;margin-bottom:16px;}
   .assign h3{margin:0 0 4px;font-size:14px;color:#E6B29F;}
   .assign p{margin:0 0 12px;font-size:12.5px;color:var(--ink-dim);}
+  .fixb{background:rgba(224,163,57,0.07);border:1px solid rgba(224,163,57,0.4);border-radius:8px;padding:10px 16px;margin-bottom:16px;}
+  .fixb summary{cursor:pointer;font-size:14px;font-weight:600;color:#E8C27A;}
+  .fixb p{margin:8px 0 12px;font-size:12.5px;color:var(--ink-dim);}
+  .fix-form{display:grid;grid-template-columns:1fr 24px 1fr auto;gap:10px;align-items:center;}
+  .fix-form span.arr{text-align:center;color:var(--ink-dim);}
+  .fix-form select{background:var(--bg2);color:var(--ink);border:1px solid var(--amber-dim);border-radius:4px;padding:7px 8px;font-size:12.5px;width:100%;min-width:0;}
+  .fix-kept{margin-top:12px;border-top:1px solid var(--line);padding-top:8px;font-size:12.5px;}
+  .fix-kept .prob-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:4px 0;}
+  @media (max-width:640px){.fix-form{grid-template-columns:1fr;}.fix-form span.arr{display:none;}}
   .assign-row{display:grid;grid-template-columns:1fr 90px 230px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13px;}
   .assign-row .mono{text-align:right;}
   .assign select{background:var(--bg2);color:var(--ink);border:1px solid var(--amber-dim);border-radius:4px;padding:6px 8px;font-size:12.5px;width:100%;}
@@ -248,7 +257,7 @@
   }
 
   :root{color-scheme:dark;}
-  body.view-only .actions, body.view-only #tab_flags, body.view-only #tab_entry, body.view-only #buyerListBtn, body.view-only #addFilesBtn, body.view-only #assignBox, body.view-only #pane_flags, body.view-only #pane_entry{display:none !important;}
+  body.view-only .actions, body.view-only #tab_flags, body.view-only #tab_entry, body.view-only #buyerListBtn, body.view-only #addFilesBtn, body.view-only #assignBox, body.view-only #fixBox, body.view-only #pane_flags, body.view-only #pane_entry{display:none !important;}
   body.view-only #dashboard .edit-input{pointer-events:none;opacity:.7;}
   .view-banner{display:none;align-items:center;gap:12px;flex-wrap:wrap;background:#FFF6DD;border:1px solid #E0A339;border-radius:8px;padding:12px 16px;margin-bottom:18px;}
   .view-banner span{flex:1;min-width:220px;}
@@ -453,7 +462,7 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
       <button class="view-tab" id="tab_entry">Check entry <span id="entryBadge"></span></button>
     </div>
     <div id="pane_machine"><div class="sec-note" style="margin-bottom:12px;">MC in sequence, MC 22 pinned to top · click a row to see its batches</div><div id="machineList"></div></div>
-    <div id="pane_buyer" style="display:none;"><div class="sec-note" style="margin-bottom:12px;">Same order &amp; keyword rules as the CALCULATION tab (in-house first, then sub-contract) · click a row for its batches</div><div id="assignBox"></div><div id="buyerSummary" class="pill-row" style="margin-bottom:14px;"></div><div id="buyerList"></div></div>
+    <div id="pane_buyer" style="display:none;"><div class="sec-note" style="margin-bottom:12px;">Same order &amp; keyword rules as the CALCULATION tab (in-house first, then sub-contract) · click a row for its batches</div><div id="assignBox"></div><div id="fixBox"></div><div id="buyerSummary" class="pill-row" style="margin-bottom:14px;"></div><div id="buyerList"></div></div>
     <div id="pane_category" style="display:none;"><section class="split">
       <div><div class="sec-head"><h2>Category split</h2></div>
         <div class="sec-note" style="margin-bottom:10px;">White, Wash, Scouring and RFD rows are rolled into one White/Wash figure</div><div id="catStack"></div></div>
@@ -878,7 +887,7 @@ function readCategoryTab(workbook){
 /* ---------- BUYER RULES — copied from the CALCULATION tab of the FINAL PRODUCTION REPORT ----------
    keys = SEARCH("text",TRIM(BUYER)) substring matches (case-insensitive); exact = SUMIF match.
    Order = row order on the CALCULATION tab. grp IN = in-house (MASL buyers), SUB = sub-contract. */
-const RULES = [{"name":"AMERICAN","grp":"IN","keys":["american"],"exact":false},{"name":"ARDON","grp":"IN","keys":["ARDON"],"exact":false},{"name":"AEON","grp":"IN","keys":["aeon"],"exact":false},{"name":"AS COLOR","grp":"IN","keys":["as col"],"exact":false},{"name":"CAPRICON","grp":"IN","keys":["CAPRICON"],"exact":false},{"name":"CISALFA","grp":"IN","keys":["cisalfa"],"exact":false},{"name":"COTTON HERITAGE","grp":"IN","keys":["cotton"],"exact":false},{"name":"ICE BERG","grp":"IN","keys":["ICE"],"exact":false},{"name":"B&C","grp":"IN","keys":["B&C"],"exact":false},{"name":"MATALAN","grp":"IN","keys":["MATALAN"],"exact":false},{"name":"NEW YORKER","grp":"IN","keys":["NEW"],"exact":false},{"name":"LPP","grp":"IN","keys":["lpp"],"exact":false},{"name":"FASHION UK","grp":"IN","keys":["FASHION U"],"exact":false},{"name":"PROMOSET","grp":"IN","keys":["PROMOSET"],"exact":false},{"name":"DMR","grp":"IN","keys":["dmr"],"exact":false},{"name":"MALFINI","grp":"IN","keys":["MALFINI"],"exact":false},{"name":"CENTENLINE","grp":"IN","keys":["CENTE"],"exact":false},{"name":"ALL GOODS","grp":"IN","keys":["ALL GOO"],"exact":false},{"name":"SALLING","grp":"IN","keys":["SALLING","SAILING"],"exact":false},{"name":"MN DYEING","grp":"IN","keys":["MN D"],"exact":false},{"name":"CAMEL","grp":"IN","keys":["CAMEL"],"exact":false},{"name":"DUCATI","grp":"IN","keys":["DUCATI","DUKATI"],"exact":false},{"name":"KAUFMANN","grp":"IN","keys":["kaufman"],"exact":false},{"name":"RECOVARY FAB","grp":"IN","keys":["RECOV"],"exact":false},{"name":"EL CORTE","grp":"IN","keys":["EL C"],"exact":false},{"name":"MODYF","grp":"IN","keys":["modyf"],"exact":false},{"name":"KSL","grp":"IN","keys":["kSL"],"exact":false},{"name":"HENRY","grp":"IN","keys":["HENRY"],"exact":false},{"name":"KARIBAN","grp":"IN","keys":["kariban"],"exact":false},{"name":"NUTMEG","grp":"IN","keys":["nut"],"exact":false},{"name":"WELLENSTEYN","grp":"IN","keys":["WELL"],"exact":false},{"name":"MAYORAL","grp":"IN","keys":["mayo"],"exact":false},{"name":"P&C","grp":"IN","keys":["p&"],"exact":false},{"name":"LIMA","grp":"IN","keys":["lima"],"exact":false},{"name":"ANTHEM","grp":"IN","keys":["anthem"],"exact":false},{"name":"ZXY","grp":"IN","keys":["ZXY"],"exact":true},{"name":"ALIB","grp":"SUB","keys":["alib"],"exact":false},{"name":"APEX","grp":"SUB","keys":["apex"],"exact":false},{"name":"APS","grp":"SUB","keys":["aps"],"exact":false},{"name":"MANAMI","grp":"SUB","keys":["manami"],"exact":false},{"name":"FORTIS","grp":"SUB","keys":["fortis"],"exact":false},{"name":"FOUR H","grp":"SUB","keys":["four"],"exact":false},{"name":"AKH","grp":"SUB","keys":["AKH"],"exact":false},{"name":"HABITUS","grp":"SUB","keys":["habitus"],"exact":false},{"name":"HAMS","grp":"SUB","keys":["hams"],"exact":false},{"name":"JM","grp":"SUB","keys":["JM","GS"],"exact":false},{"name":"KA DESIGN","grp":"SUB","keys":["ka design"],"exact":false},{"name":"INTIMATE","grp":"SUB","keys":["INTIMATE"],"exact":false},{"name":"SUPREME","grp":"SUB","keys":["supr"],"exact":false},{"name":"LIZ","grp":"SUB","keys":["liz","lida"],"exact":false},{"name":"fashion asia","grp":"SUB","keys":["FASHION A","DUKATI"],"exact":false},{"name":"MS FABRICS","grp":"SUB","keys":["ms fa"],"exact":false},{"name":"PENTAGON","grp":"SUB","keys":["pent"],"exact":false},{"name":"RADIANCE","grp":"SUB","keys":["radia"],"exact":false},{"name":"RAGADI","grp":"SUB","keys":["ragadi"],"exact":false},{"name":"RHINO","grp":"SUB","keys":["rhino"],"exact":false},{"name":"SILKEN","grp":"SUB","keys":["silken"],"exact":false},{"name":"MARB TEX","grp":"SUB","keys":["marb","ONE COMP"],"exact":false},{"name":"SQ","grp":"SUB","keys":["sq"],"exact":false},{"name":"AC MILAN","grp":"SUB","keys":["AC M"],"exact":false}];
+const RULES = [{"name":"AMERICAN","grp":"IN","keys":["american"],"exact":false},{"name":"ARDON","grp":"IN","keys":["ARDON"],"exact":false},{"name":"AEON","grp":"IN","keys":["aeon"],"exact":false},{"name":"AS COLOR","grp":"IN","keys":["as col"],"exact":false},{"name":"CAPRICON","grp":"IN","keys":["CAPRICON"],"exact":false},{"name":"CISALFA","grp":"IN","keys":["cisalfa"],"exact":false},{"name":"COTTON HERITAGE","grp":"IN","keys":["cotton"],"exact":false},{"name":"ICE BERG","grp":"IN","keys":["ICE"],"exact":false},{"name":"B&C","grp":"IN","keys":["B&C"],"exact":false},{"name":"MATALAN","grp":"IN","keys":["MATALAN"],"exact":false},{"name":"NEW YORKER","grp":"IN","keys":["NEW"],"exact":false},{"name":"LPP","grp":"IN","keys":["lpp"],"exact":false},{"name":"FASHION UK","grp":"IN","keys":["FASHION U"],"exact":false},{"name":"PROMOSET","grp":"IN","keys":["PROMOSET"],"exact":false},{"name":"DMR","grp":"IN","keys":["dmr"],"exact":false},{"name":"MALFINI","grp":"IN","keys":["MALFINI"],"exact":false},{"name":"CENTENLINE","grp":"IN","keys":["CENTE"],"exact":false},{"name":"ALL GOODS","grp":"IN","keys":["ALL GOO"],"exact":false},{"name":"SALLING","grp":"IN","keys":["SALLING","SAILING"],"exact":false},{"name":"MN DYEING","grp":"IN","keys":["MN D"],"exact":false},{"name":"CAMEL","grp":"IN","keys":["CAMEL"],"exact":false},{"name":"DUCATI","grp":"IN","keys":["DUCATI","DUKATI"],"exact":false},{"name":"KAUFMANN","grp":"IN","keys":["kaufman"],"exact":false},{"name":"RECOVARY FAB","grp":"IN","keys":["RECOV"],"exact":false},{"name":"EL CORTE","grp":"IN","keys":["EL C"],"exact":false},{"name":"MODYF","grp":"IN","keys":["modyf"],"exact":false},{"name":"KSL","grp":"IN","keys":["kSL"],"exact":false},{"name":"HENRY","grp":"IN","keys":["HENRY"],"exact":false},{"name":"KARIBAN","grp":"IN","keys":["kariban"],"exact":false},{"name":"NUTMEG","grp":"IN","keys":["nut"],"exact":false},{"name":"WELLENSTEYN","grp":"IN","keys":["WELL"],"exact":false},{"name":"MAYORAL","grp":"IN","keys":["mayo"],"exact":false},{"name":"P&C","grp":"IN","keys":["p&"],"exact":false},{"name":"LIMA","grp":"IN","keys":["lima"],"exact":false},{"name":"ANTHEM","grp":"IN","keys":["anthem"],"exact":false},{"name":"ZXY","grp":"IN","keys":["ZXY"],"exact":true},{"name":"ALIB","grp":"SUB","keys":["alib"],"exact":false},{"name":"APEX","grp":"SUB","keys":["apex"],"exact":false},{"name":"APS","grp":"SUB","keys":["aps"],"exact":false},{"name":"MANAMI","grp":"SUB","keys":["manami"],"exact":false},{"name":"FORTIS","grp":"SUB","keys":["fortis"],"exact":false},{"name":"FOUR H","grp":"SUB","keys":["four"],"exact":false},{"name":"AKH","grp":"SUB","keys":["AKH"],"exact":false},{"name":"HABITUS","grp":"SUB","keys":["habitus"],"exact":false},{"name":"HAMS","grp":"SUB","keys":["hams"],"exact":false},{"name":"JM","grp":"SUB","keys":["JM","GS"],"exact":false},{"name":"KA DESIGN","grp":"SUB","keys":["ka design"],"exact":false},{"name":"SUPREME","grp":"SUB","keys":["supr"],"exact":false},{"name":"LIZ","grp":"SUB","keys":["liz","lida"],"exact":false},{"name":"fashion asia","grp":"SUB","keys":["FASHION A","DUKATI"],"exact":false},{"name":"MS FABRICS","grp":"SUB","keys":["ms fa"],"exact":false},{"name":"PENTAGON","grp":"SUB","keys":["pent"],"exact":false},{"name":"RADIANCE","grp":"SUB","keys":["radia"],"exact":false},{"name":"RAGADI","grp":"SUB","keys":["ragadi"],"exact":false},{"name":"RHINO","grp":"SUB","keys":["rhino"],"exact":false},{"name":"SILKEN","grp":"SUB","keys":["silken"],"exact":false},{"name":"MARB TEX","grp":"SUB","keys":["marb","ONE COMP","INTIMATE"],"exact":false},{"name":"SQ","grp":"SUB","keys":["sq"],"exact":false},{"name":"AC MILAN","grp":"SUB","keys":["AC M"],"exact":false},{"name":"IRISH DESIGN","grp":"SUB","keys":["IRISH","IRIS"],"exact":false}];
 function buyerReport(parsed){
   const prod = parsed.filter(r => r.mc && !r.flagged && r.qty !== null);
   const isSample = r => /SAMPLE/i.test(r.mc);
@@ -1194,6 +1203,41 @@ function render(d){
     const key = [...un.keys()].join('|');
     if(STATE.asked !== key){ STATE.asked = key; currentView = 'buyer'; }
   } else ab.innerHTML = '';
+  // ---- any buyer name that is wrong: pick it, pick the correct buyer, and every entry is changed (so exports and the corrected main file carry it) ----
+  const fb = document.getElementById('fixBox');
+  const seenB = new Map();
+  rp.lines.forEach(l => l.rows.forEach(r => { const k = String(r.buyer||'').trim().toUpperCase(); if(!k) return; const o = seenB.get(k) || {q:0, n:0, under:l.name}; o.q += r.qty; o.n++; seenB.set(k, o); }));
+  rp.unmapped.forEach(r => { const k = String(r.buyer||'').trim().toUpperCase(); if(!k) return; const o = seenB.get(k) || {q:0, n:0, under:'not counted anywhere'}; o.q += r.qty; o.n++; seenB.set(k, o); });
+  if(seenB.size){
+    const rulesNow = effectiveRules();
+    const optFrom = '<option value="">— wrong buyer —</option>' + [...seenB].sort((a,b) => a[0].localeCompare(b[0]))
+      .map(([k,o]) => `<option value="${esc(k)}">${esc(k)} · ${fmt(o.q)} kg · now under ${esc(o.under)}</option>`).join('');
+    const optTo = '<option value="">— correct buyer —</option>' +
+      ['IN','SUB'].map(g => `<optgroup label="${g==='IN'?'IN HOUSE':'SUB CONTRACT'}">` + rulesNow.filter(x => x.grp===g).map(x => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('') + '</optgroup>').join('');
+    const kept = Object.entries(STATE.custom.rename || {});
+    fb.innerHTML = `<details class="fixb"${STATE.fixOpen ? ' open' : ''}><summary>Wrong buyer name? Count it as the correct buyer</summary>
+      <p>Choose the buyer as it is typed now, then the buyer it should be. The name is replaced in every loaded entry (all days), so the buyer report and every exported file show the corrected buyer. It is remembered for the next time the same name appears.</p>
+      <div class="fix-form"><select id="fixFrom">${optFrom}</select><span class="arr">→</span><select id="fixTo">${optTo}</select><button class="btn small primary" id="fixApply">Correct it</button></div>
+      ${kept.length ? '<div class="fix-kept"><b>Corrections kept</b>' + kept.map(([k,v]) => `<div class="prob-row"><span>${esc(k)} → <b>${esc(v)}</b></span><button class="btn small" data-unfix="${esc(k)}">Stop correcting</button></div>`).join('') + '</div>' : ''}
+    </details>`;
+    const det = fb.querySelector('details'); det.addEventListener('toggle', () => { STATE.fixOpen = det.open; });
+    document.getElementById('fixApply').addEventListener('click', () => {
+      const from = document.getElementById('fixFrom').value, to = document.getElementById('fixTo').value;
+      if(!from || !to){ toast('Choose the wrong buyer and the correct buyer first', 'err'); return; }
+      const rule = effectiveRules().find(x => x.name === to); if(!rule) return;
+      const text = buyerTextFor(rule), U = x => String(x||'').trim().toUpperCase();
+      if(U(text) === from){ toast(from + ' is already written as ' + to, 'err'); return; }
+      if((STATE.custom.rename || {})[U(text)]){ toast(text + ' is itself being corrected to ' + STATE.custom.rename[U(text)] + '. Stop that correction first.', 'err'); return; }
+      const n = renameBuyer(from, to);
+      persistBuyers(); STATE.fixOpen = true;
+      toast(from + ' is now ' + text + ' (' + n + ' entr' + (n === 1 ? 'y' : 'ies') + '). Exports and the corrected main file follow.');
+      render(aggregate());
+    });
+    fb.querySelectorAll('[data-unfix]').forEach(b => b.addEventListener('click', () => {
+      delete STATE.custom.rename[b.dataset.unfix]; persistBuyers(); STATE.fixOpen = true;
+      toast('Stopped. Load the main file again to see the original spelling.'); render(aggregate());
+    }));
+  } else fb.innerHTML = '';
   switchView(currentView);
 
   // ---- category split ----

@@ -79,3 +79,10 @@ The `#` of a row turns green when it is a production batch (has a batch number a
 - Every warning (Needs a look, Problems window, export stop, the Google mail) starts with **date, MC, buyer, colour, batch number**. The long-duration (18h+) warning now shows them too.
 - **Check entry** fits one screen width: narrow fixed columns, the batch number column is just wide enough for 8 digits, Fabric and Check wrap. On a narrow phone it scrolls sideways.
 - After pasting the new `FloorReports.gs`, redeploy it as a **New version** (the duplicate-batch message now names MC, buyer and colour).
+
+## Buyer changes (latest)
+- **INTIMATE** is no longer a buyer. Any entry with INTIMATE in the buyer name is counted under **MARB TEX** (INTIMATE is now one of MARB TEX's keywords).
+- **IRISH DESIGN** added as a **SUB CONTRACT** buyer, keywords `IRISH` and `IRIS`.
+- **Wrong buyer name? Count it as the correct buyer** (By buyer tab, above the totals): pick the wrong buyer from the list of names found in the loaded file, pick the correct buyer, press **Correct it**. The name is replaced in every loaded entry, so the buyer report, all exported files and the corrected main file carry the correct buyer. It works for any buyer, not only unrecognised ones, and is remembered for the next load. **Stop correcting** (same panel, or Buyer list) undoes it.
+- If you had already edited the keywords of MARB TEX in **Buyer list**, your own keyword list replaces the built-in one, so add INTIMATE there too (or press Reset my changes). If you had added IRISH DESIGN yourself in Buyer list, remove your copy.
+
