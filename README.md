@@ -74,7 +74,7 @@ The `#` of a row turns green when it is a production batch (has a batch number a
 
 ## Added in this version
 - **Actual file, Unit 1 + 2 combined · .xlsx**: one Sheet1 with every row of the day (UNIT column added), CATEGORY and BATCHMC tabs for each unit, and a TOTAL U1+2 tab. It is also inside the "Everything" zip.
-- **Reprocess report · .xlsx**: only the report day on screen, both units. Counts **R/M and R/W** batches (columns: DATE, MACHINE, BUYER, BATCH NO, COLOR, FABRICATION, QTY(KG(, LOAD TIME, UNLOAD TIME, duration, RFT, CAUSE; CAUSE is left empty for you to fill), with totals split R/M, R/W and by unit. Also inside the "Everything" zip. The Month report's REPROCESS column still counts R/M only.
+- **Reprocess report · .xlsx**: counts **R/M and R/W** batches, both units. The sheet lists every loaded day of the month up to the report day (DATE, UNIT, MC, BUYER, COLOR, BATCH NO, FABRIC, QTY (KG), LOAD TIME, UNLOAD TIME, DURATION, RFT, CAUSE) plus a BY DAY tab, but it is saved with an Excel filter on DATE, so only the report day shows when it opens. Open the DATE filter to show other days. The TOTAL row follows the filter. Also inside the "Everything" zip. The Month report's REPROCESS column still counts R/M only.
 - The Category report · .xlsx export was removed (the .png stays).
 - Every warning (Needs a look, Problems window, export stop, the Google mail) starts with **date, MC, buyer, colour, batch number**. The long-duration (18h+) warning now shows them too.
 - **Check entry** fits one screen width: narrow fixed columns, the batch number column is just wide enough for 8 digits, Fabric and Check wrap. On a narrow phone it scrolls sideways.

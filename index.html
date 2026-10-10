@@ -1951,31 +1951,66 @@ function buildActualBothXlsx(){
   return {name:`ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-1+2).xlsx`, blob:aoaBlob(wb)};
 }
 
-/* REPROCESS report: only the report day on screen, both units. Counts R/M (R/M, RM, R.M, Rematch) AND R/W (R/W, RW, R.W) batches. */
+/* REPROCESS report: R/M (R/M, RM, R.M, Rematch) and R/W (R/W, RW, R.W) batches, both units.
+   The sheet lists EVERY loaded day of the month up to the report day, but the file is saved with an Excel filter on DATE = the report day,
+   so only that day shows when it opens (every other day is hidden, one click on the DATE filter shows them again). */
 const isRW = v => /^R\s*[\/.\-]?\s*W\b/i.test(String(v||'').trim());
 function reprocessRowsOf(u, iso){
-  const rows = STATE.parsed.filter(r => r.iso === iso && r.unit === u), cfg = UNIT_CFG[u];
+  const live = STATE.parsed.filter(r => r.iso === iso && r.unit === u);
+  const rows = live.length ? live : ((STATE.main && STATE.main.dayMap[iso]) ? STATE.main.dayMap[iso].entries.filter(e => e.unit === u) : []), cfg = UNIT_CFG[u];
   return rows.filter(r => r.mc && /^\d+$/.test(String(r.mc).trim()) && +r.mc >= cfg.lo && +r.mc <= cfg.hi && (isRM(r.rft) || isRW(r.rft)));
 }
-function buildReprocessXlsx(){
-  const iso = STATE.reportIso, list = [];
-  [1,2].forEach(u => reprocessRowsOf(u, iso).forEach(r => list.push({u, r})));
-  if(!list.length) throw new Error('No R/M or R/W batches on ' + reportLabel() + '.');
-  const H = ['DATE','MACHINE','BUYER','BATCH NO','COLOR','FABRICATION','QTY(KG(','LOAD TIME','UNLOAD TIME','','RFT','CAUSE'];   // the blank-headed column holds the duration; CAUSE is left empty for you to fill
-  list.sort((a,b) => (+a.r.mc - +b.r.mc));
-  const aoa = [['REPROCESS (R/M + R/W) BATCHES - ' + labelOf(iso)], H,
-    ...list.map(({u, r}) => [labelOf(iso), /^\d+$/.test(String(r.mc).trim()) ? +r.mc : r.mc, r.buyer||'', r.batch||'', r.color||'', r.fabric||'', r.qty ?? '', r.loadTime||'', r.unloadTime||'', r.duration||'', r.rft||'', ''])];
-  const kg = (u, f) => list.filter(x => (!u || x.u === u) && (!f || f(x.r.rft))).reduce((t,x) => t + (x.r.qty||0), 0);
-  aoa.push(['TOTAL','','','','','', kg()]);
-  aoa.push(['  of which R/M','','','','','', kg(0, isRM)], ['  of which R/W','','','','','', kg(0, isRW)], ['  UNIT 1','','','','','', kg(1)], ['  UNIT 2','','','','','', kg(2)]);
-  const ws = XLSX.utils.aoa_to_sheet(aoa), hs = cellStyle('D9E2F3',{b:1,sz:10,wrap:1}), nb = list.length + 2;
-  ws['A1'].s = cellStyle('A9D08E',{b:1,sz:12}); ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:11}}];
-  H.forEach((h,c) => { const a = XLSX.utils.encode_cell({r:1,c}); (ws[a] || (ws[a] = {t:'s',v:''})).s = hs; });
-  aoa.slice(2).forEach((row,i) => H.forEach((h,c) => { const a = XLSX.utils.encode_cell({r:i+2,c}); const cell = ws[a] || (ws[a] = {t:'s',v:''}); cell.s = cellStyle(i+2 >= nb ? 'D9D9D9' : null,{sz:11,b:i+2 === nb}); }));
-  ws['!cols'] = [12,9,22,12,20,22,11,11,12,12,8,30].map(w => ({wch:w}));
-  ws['!ref'] = 'A1:L' + aoa.length;
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'REPROCESS');
-  return {name:'REPROCESS REPORT - ' + fileDate() + ' (UNIT-1+2).xlsx', blob:aoaBlob(wb)};
+async function buildReprocessXlsx(){
+  const iso0 = STATE.reportIso; if(!/^\d{4}-\d\d-\d\d$/.test(iso0)) throw new Error('Pick a day first.');
+  const [y,m] = iso0.split('-').map(Number), n = daysInMonth(y,m), list = [], byDay = [];
+  for(let dd=1; dd<=n; dd++){ const iso = isoOf(y,m,dd); if(iso > iso0) break;
+    const row = {iso, kg:{}, cnt:{}, shown:{}};
+    [1,2].forEach(u => { const rr = reprocessRowsOf(u, iso); rr.forEach(r => list.push({iso, u, r}));
+      row.cnt[u] = rr.length; row.kg[u] = rr.reduce((t,r) => t + (r.qty||0), 0);
+      const fg = figuresFor(u, iso); row.shown[u] = fg && fg.src ? fg.H : null; });
+    byDay.push(row); }
+  if(!list.some(x => x.iso === iso0)) throw new Error('No R/M or R/W batches on ' + labelOf(iso0) + '.');
+  const H = ['DATE','UNIT','MC','BUYER','COLOR','BATCH NO','FABRIC','QTY (KG)','LOAD TIME','UNLOAD TIME','DURATION','RFT','CAUSE'];
+  const aoa = [['REPROCESS (R/M + R/W) BATCHES - ' + MONTHS[m-1] + ' ' + y + ' (up to ' + labelOf(iso0) + ')'], H,
+    ...list.map(({iso, u, r}) => [labelOf(iso), 'UNIT ' + u, /^\d+$/.test(String(r.mc).trim()) ? +r.mc : r.mc, r.buyer||'', r.color||'', r.batch||'', r.fabric||'', r.qty ?? '', r.loadTime||'', r.unloadTime||'', r.duration||'', r.rft||'', ''])];
+  const first = 3, lastData = 2 + list.length, totRow = lastData + 1;
+  const dayKg = list.filter(x => x.iso === iso0).reduce((t,x) => t + (x.r.qty||0), 0);
+  aoa.push(['TOTAL','','','','','','', '', '','','','','']);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const hs = cellStyle('D9E2F3',{b:1,sz:10,wrap:1}), ds = cellStyle(null,{sz:11}), dw = cellStyle(null,{sz:11,wrap:1}), ts = cellStyle('D9D9D9',{b:1,sz:11});
+  const at = (r,c) => XLSX.utils.encode_cell({r,c}), cell = (r,c) => ws[at(r,c)] || (ws[at(r,c)] = {t:'s',v:''});
+  for(let c=0;c<12;c++) cell(0,c).s = cellStyle('A9D08E',{b:1,sz:12});
+  ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:11}}];
+  H.forEach((h,c) => cell(1,c).s = hs);
+  for(let r=2; r<=lastData-0; r++) H.forEach((h,c) => { const x = cell(r,c); x.s = c === 6 ? dw : ds; });
+  H.forEach((h,c) => cell(totRow-1,c).s = ts);
+  ws[at(totRow-1,7)] = {t:'n', f:'SUBTOTAL(109,H' + first + ':H' + lastData + ')', v:dayKg, s:ts};   // follows the filter: total of the day that is showing
+  ws['!cols'] = [10.4,8.9,7.9,15.1,18.3,12.9,14.7,8.3,11.9,11.9,10.9,8.9,14].map(w => ({wch:w}));
+  ws['!rows'] = []; ws['!rows'][0] = {hpt:15.75}; ws['!rows'][1] = {hpt:25.5};
+  ws['!ref'] = 'A1:M' + totRow; ws['!autofilter'] = {ref:'A2:M' + lastData};
+  const hidden = new Set(); list.forEach((x,i) => { if(x.iso !== iso0) hidden.add(3 + i); });   // 1-based sheet rows
+  const b2 = [['REPROCESS kg BY DAY - ' + MONTHS[m-1] + ' ' + y], ['DATE','UNIT 1 BATCHES','UNIT 1 KG','UNIT 2 BATCHES','UNIT 2 KG','TOTAL KG','MONTH REPORT SHOWS (U1 + U2)'],
+    ...byDay.map(x => [labelOf(x.iso), x.cnt[1], x.kg[1], x.cnt[2], x.kg[2], x.kg[1] + x.kg[2], (x.shown[1] === null && x.shown[2] === null) ? '' : (x.shown[1]||0) + (x.shown[2]||0)])];
+  const S = f => byDay.reduce((t,x) => t + f(x), 0);
+  b2.push(['TOTAL', S(x=>x.cnt[1]), S(x=>x.kg[1]), S(x=>x.cnt[2]), S(x=>x.kg[2]), S(x=>x.kg[1]+x.kg[2]), S(x => (x.shown[1]||0) + (x.shown[2]||0))], [], ['The last column is the figure the Month report uses. It differs from the batch list only if you typed your own REPROCESS figure, or the day was stored earlier.']);
+  const w2 = XLSX.utils.aoa_to_sheet(b2), c2 = (r,c) => w2[XLSX.utils.encode_cell({r,c})] || (w2[XLSX.utils.encode_cell({r,c})] = {t:'s',v:''}), tr = byDay.length + 2;
+  for(let c=0;c<7;c++){ c2(0,c).s = cellStyle('A9D08E',{b:1,sz:12}); c2(1,c).s = hs; for(let r=2;r<tr;r++) c2(r,c).s = ds; c2(tr,c).s = ts; }
+  w2['!merges'] = [{s:{r:0,c:0},e:{r:0,c:6}}]; w2['!cols'] = [12.9,14.9,12.9,14.9,12.9,12,24.9].map(w => ({wch:w}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'REPROCESS'); XLSX.utils.book_append_sheet(wb, w2, 'BY DAY');
+  let blob = aoaBlob(wb);
+  // real Excel filter on DATE = the report day (rows of the other days hidden, filter button shows the active filter)
+  try{
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer()), name = 'xl/worksheets/sheet1.xml';
+    let x = await zip.file(name).async('string');
+    x = x.replace(/<row r="(\d+)"/g, (a, r) => hidden.has(+r) ? '<row r="' + r + '" hidden="1"' : a);
+    const af = '<autoFilter ref="A2:M' + lastData + '"><filterColumn colId="0"><filters><filter val="' + labelOf(iso0) + '"/></filters></filterColumn></autoFilter>';
+    if(/<autoFilter[^>]*\/>/.test(x)) x = x.replace(/<autoFilter[^>]*\/>/, af);
+    else if(x.includes('<mergeCells')) x = x.replace('<mergeCells', af + '<mergeCells'); else x = x.replace('<pageMargins', af + '<pageMargins');
+    x = /<sheetPr/.test(x) ? x.replace('<sheetPr', '<sheetPr filterMode="1"') : x.replace(/(<worksheet[^>]*>)/, '$1<sheetPr filterMode="1"/>');
+    zip.file(name, x);
+    blob = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  }catch(e){ console.error('reprocess filter not applied', e); }
+  return {name:'REPROCESS REPORT - ' + fileDate() + ' (UNIT-1+2).xlsx', blob};
 }
 /* ---------- the daily WhatsApp-style message, both units, ready to copy ---------- */
 function buildMessage(){
@@ -2124,7 +2159,7 @@ $('bothBtn').addEventListener('click', async () => {
       for(const b of [buildActualXlsx, buildFinalXlsx, buildBuyerPng, buildMcPng]){ const f = await b(u); folder.file(f.name, f.blob); }
     }
     for(const b of [buildBuyerPngBoth, buildCategoryBothPng, async () => buildActualBothXlsx()]){ const f = await b(); zip.file(f.name, f.blob); }
-    try{ const f = buildReprocessXlsx(); zip.file(f.name, f.blob); }catch(e){}   // no R/M batches loaded: simply no reprocess file
+    try{ const f = await buildReprocessXlsx(); zip.file(f.name, f.blob); }catch(e){}   // no R/M batches loaded: simply no reprocess file
     zip.file('MESSAGE - '+fileDate()+'.txt', buildMessage());   // combined Unit 1 + 2 reports sit beside the UNIT folders
     const blob = await zip.generateAsync({type:'blob'});
     await saveFile('FINAL PACKAGE - ' + fileDate() + '.zip', blob);
