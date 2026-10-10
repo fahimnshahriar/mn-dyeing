@@ -1203,11 +1203,12 @@ function render(d){
     const key = [...un.keys()].join('|');
     if(STATE.asked !== key){ STATE.asked = key; currentView = 'buyer'; }
   } else ab.innerHTML = '';
-  // ---- any buyer name that is wrong: pick it, pick the correct buyer, and every entry is changed (so exports and the corrected main file carry it) ----
+  // ---- correction bar: only when a buyer is not recognised, or one batch fits two buyers ----
   const fb = document.getElementById('fixBox');
   const seenB = new Map();
-  rp.lines.forEach(l => l.rows.forEach(r => { const k = String(r.buyer||'').trim().toUpperCase(); if(!k) return; const o = seenB.get(k) || {q:0, n:0, under:l.name}; o.q += r.qty; o.n++; seenB.set(k, o); }));
-  rp.unmapped.forEach(r => { const k = String(r.buyer||'').trim().toUpperCase(); if(!k) return; const o = seenB.get(k) || {q:0, n:0, under:'not counted anywhere'}; o.q += r.qty; o.n++; seenB.set(k, o); });
+  const addSeen = (r, under) => { const k = String(r.buyer||'').trim().toUpperCase(); if(!k) return; const o = seenB.get(k) || {q:0, n:0, under}; o.q += r.qty; o.n++; seenB.set(k, o); };
+  rp.unmapped.forEach(r => addSeen(r, 'not counted anywhere'));
+  rp.overlaps.forEach(r => addSeen(r, r.chosen + ' (fits two buyers)'));
   if(seenB.size){
     const rulesNow = effectiveRules();
     const optFrom = '<option value="">— wrong buyer —</option>' + [...seenB].sort((a,b) => a[0].localeCompare(b[0]))
@@ -1215,7 +1216,7 @@ function render(d){
     const optTo = '<option value="">— correct buyer —</option>' +
       ['IN','SUB'].map(g => `<optgroup label="${g==='IN'?'IN HOUSE':'SUB CONTRACT'}">` + rulesNow.filter(x => x.grp===g).map(x => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('') + '</optgroup>').join('');
     const kept = Object.entries(STATE.custom.rename || {});
-    fb.innerHTML = `<details class="fixb"${STATE.fixOpen ? ' open' : ''}><summary>Wrong buyer name? Count it as the correct buyer</summary>
+    fb.innerHTML = `<details class="fixb"${STATE.fixOpen === false ? '' : ' open'}><summary>Wrong buyer name? Count it as the correct buyer</summary>
       <p>Choose the buyer as it is typed now, then the buyer it should be. The name is replaced in every loaded entry (all days), so the buyer report and every exported file show the corrected buyer. It is remembered for the next time the same name appears.</p>
       <div class="fix-form"><select id="fixFrom">${optFrom}</select><span class="arr">→</span><select id="fixTo">${optTo}</select><button class="btn small primary" id="fixApply">Correct it</button></div>
       ${kept.length ? '<div class="fix-kept"><b>Corrections kept</b>' + kept.map(([k,v]) => `<div class="prob-row"><span>${esc(k)} → <b>${esc(v)}</b></span><button class="btn small" data-unfix="${esc(k)}">Stop correcting</button></div>`).join('') + '</div>' : ''}
@@ -1229,12 +1230,12 @@ function render(d){
       if(U(text) === from){ toast(from + ' is already written as ' + to, 'err'); return; }
       if((STATE.custom.rename || {})[U(text)]){ toast(text + ' is itself being corrected to ' + STATE.custom.rename[U(text)] + '. Stop that correction first.', 'err'); return; }
       const n = renameBuyer(from, to);
-      persistBuyers(); STATE.fixOpen = true;
+      persistBuyers();
       toast(from + ' is now ' + text + ' (' + n + ' entr' + (n === 1 ? 'y' : 'ies') + '). Exports and the corrected main file follow.');
       render(aggregate());
     });
     fb.querySelectorAll('[data-unfix]').forEach(b => b.addEventListener('click', () => {
-      delete STATE.custom.rename[b.dataset.unfix]; persistBuyers(); STATE.fixOpen = true;
+      delete STATE.custom.rename[b.dataset.unfix]; persistBuyers();
       toast('Stopped. Load the main file again to see the original spelling.'); render(aggregate());
     }));
   } else fb.innerHTML = '';
