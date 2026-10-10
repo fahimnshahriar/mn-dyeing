@@ -2101,7 +2101,8 @@ async function buildReprocessXlsx(){
         list.push({iso, u, r:{mc:'', buyer:'MONTH REPORT FIGURE (' + (SRC_LABEL[fg.src] || fg.src) + ')', color:'', batch:'', fabric:'no batch lines', qty:fg.H, loadTime:'', unloadTime:'', duration:'', rft:'R/M'}});
         row.kg[u] = fg.H; } });
     byDay.push(row); }
-  if(!list.some(x => x.iso === iso0)) throw new Error('No R/M or R/W batches on ' + labelOf(iso0) + '.');
+  /* nothing on the report day: still make the file (month overview on BY DAY) with one clear line, instead of stopping with an error */
+  if(!list.some(x => x.iso === iso0)) list.push({iso:iso0, u:STATE.unit || 1, r:{mc:'', buyer:'NO R/M OR R/W BATCH ON THIS DAY', color:'', batch:'', fabric:'', qty:0, loadTime:'', unloadTime:'', duration:'', rft:''}});
   const H = ['DATE','UNIT','MC','BUYER','COLOR','BATCH NO','FABRIC','QTY (KG)','LOAD TIME','UNLOAD TIME','DURATION','RFT','CAUSE'];
   const aoa = [['REPROCESS (R/M + R/W) BATCHES - ' + MONTHS[m-1] + ' ' + y + ' (up to ' + labelOf(iso0) + ')'], H,
     ...list.map(({iso, u, r}) => [labelOf(iso), 'UNIT ' + u, /^\d+$/.test(String(r.mc).trim()) ? +r.mc : r.mc, r.buyer||'', r.color||'', r.batch||'', r.fabric||'', r.qty ?? '', r.loadTime||'', r.unloadTime||'', r.duration||'', r.rft||'', ''])];
@@ -2137,8 +2138,14 @@ async function buildReprocessXlsx(){
     const page = (x, filterMode) => {
       x = x.replace(/<sheetPr[^>]*\/>|<sheetPr[^>]*>[\s\S]*?<\/sheetPr>/, '');
       x = x.replace(/(<worksheet[^>]*>)/, '$1<sheetPr' + (filterMode ? ' filterMode="1"' : '') + '><pageSetUpPr fitToPage="1"/></sheetPr>');
-      x = x.replace(/<pageMargins[^>]*\/>(<pageSetup[^>]*\/>)?/, '');
-      return x.replace('</worksheet>', '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>');
+      /* Excel is strict about the order of the parts: pageMargins, pageSetup must come BEFORE ignoredErrors (which SheetJS writes after them),
+         so they go exactly where the old pageMargins was, never at the end of the sheet */
+      const pm = '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>';
+      x = x.replace(/<pageSetup[^>]*\/>/g, '');
+      if(/<pageMargins[^>]*\/>/.test(x)) x = x.replace(/<pageMargins[^>]*\/>/, () => pm);
+      else if(x.includes('<ignoredErrors')) x = x.replace('<ignoredErrors', () => pm + '<ignoredErrors');
+      else x = x.replace('</worksheet>', () => pm + '</worksheet>');
+      return x;
     };
     const n1 = 'xl/worksheets/sheet1.xml', n2 = 'xl/worksheets/sheet2.xml';
     let x = await zip.file(n1).async('string');
