@@ -1998,18 +1998,26 @@ async function buildReprocessXlsx(){
   w2['!merges'] = [{s:{r:0,c:0},e:{r:0,c:6}}]; w2['!cols'] = [12.9,14.9,12.9,14.9,12.9,12,24.9].map(w => ({wch:w}));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'REPROCESS'); XLSX.utils.book_append_sheet(wb, w2, 'BY DAY');
   let blob = aoaBlob(wb);
-  // real Excel filter on DATE = the report day (rows of the other days hidden, filter button shows the active filter)
+  // real Excel filter on DATE = the report day (rows of the other days hidden, filter button shows the active filter),
+  // and landscape + every column on one page wide for printing
   try{
-    const zip = await JSZip.loadAsync(await blob.arrayBuffer()), name = 'xl/worksheets/sheet1.xml';
-    let x = await zip.file(name).async('string');
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const page = (x, filterMode) => {
+      x = x.replace(/<sheetPr[^>]*\/>|<sheetPr[^>]*>[\s\S]*?<\/sheetPr>/, '');
+      x = x.replace(/(<worksheet[^>]*>)/, '$1<sheetPr' + (filterMode ? ' filterMode="1"' : '') + '><pageSetUpPr fitToPage="1"/></sheetPr>');
+      x = x.replace(/<pageMargins[^>]*\/>(<pageSetup[^>]*\/>)?/, '');
+      return x.replace('</worksheet>', '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>');
+    };
+    const n1 = 'xl/worksheets/sheet1.xml', n2 = 'xl/worksheets/sheet2.xml';
+    let x = await zip.file(n1).async('string');
     x = x.replace(/<row r="(\d+)"/g, (a, r) => hidden.has(+r) ? '<row r="' + r + '" hidden="1"' : a);
     const af = '<autoFilter ref="A2:M' + lastData + '"><filterColumn colId="0"><filters><filter val="' + labelOf(iso0) + '"/></filters></filterColumn></autoFilter>';
     if(/<autoFilter[^>]*\/>/.test(x)) x = x.replace(/<autoFilter[^>]*\/>/, af);
-    else if(x.includes('<mergeCells')) x = x.replace('<mergeCells', af + '<mergeCells'); else x = x.replace('<pageMargins', af + '<pageMargins');
-    x = /<sheetPr/.test(x) ? x.replace('<sheetPr', '<sheetPr filterMode="1"') : x.replace(/(<worksheet[^>]*>)/, '$1<sheetPr filterMode="1"/>');
-    zip.file(name, x);
+    else if(x.includes('<mergeCells')) x = x.replace('<mergeCells', af + '<mergeCells'); else x = x.replace('</worksheet>', af + '</worksheet>');
+    zip.file(n1, page(x, true));
+    if(zip.file(n2)) zip.file(n2, page(await zip.file(n2).async('string'), false));
     blob = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  }catch(e){ console.error('reprocess filter not applied', e); }
+  }catch(e){ console.error('reprocess filter / page setup not applied', e); }
   return {name:'REPROCESS REPORT - ' + fileDate() + ' (UNIT-1+2).xlsx', blob};
 }
 /* ---------- the daily WhatsApp-style message, both units, ready to copy ---------- */
