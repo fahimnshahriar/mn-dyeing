@@ -1534,7 +1534,21 @@ function reprocFor(u, iso, auto, unknown = 0){
   return h ? h.H : unknown;
 }
 
+/* an earlier day must never export 0 kg REPROCESS when a figure exists somewhere: saved log, uploaded actual file, or the R/M batches of the main file */
+function reprocFallback(u, k){
+  const h = STATE.hist[reprocKey(u, k)]; if(h && h.H > 0) return h.H;
+  const fc = STATE.fileCat[u][k]; if(fc && fc.H > 0) return fc.H;
+  let rows = dayRowsOf(u, k);
+  if(!rows.length && STATE.main && STATE.main.dayMap[k]) rows = STATE.main.dayMap[k].entries.filter(e => e.unit === u);
+  if(rows.length){ const sm = summarize(rows, u); return sm.Hauto || 0; }
+  return 0;
+}
 function figuresFor(u, k){
+  const r = figuresForBase(u, k);
+  if(r && r.src && !(r.H > 0) && manualReproc(u, k) === undefined){ const f = reprocFallback(u, k); if(f > 0) r.H = f; }
+  return r;
+}
+function figuresForBase(u, k){
   const mk = (x, src) => ({iso:k, B:x.B, C:x.C, D:x.D, F:x.F, H:x.H, J:x.J, ok: x.C+x.D+x.F+x.J === x.B, src});
   const live = (rows, src) => { const s = summarize(rows, u); return s.hasData ? mk({B:s.B,C:s.C,D:s.D,F:s.F,J:s.J,H:reprocFor(u,k,s.Hauto)}, src) : null; };
   const fx = STATE.fixes[reprocKey(u,k)];
@@ -2080,7 +2094,12 @@ async function buildReprocessXlsx(){
     const row = {iso, kg:{}, cnt:{}, shown:{}};
     [1,2].forEach(u => { const rr = reprocessRowsOf(u, iso); rr.forEach(r => list.push({iso, u, r}));
       row.cnt[u] = rr.length; row.kg[u] = rr.reduce((t,r) => t + (r.qty||0), 0);
-      const fg = figuresFor(u, iso); row.shown[u] = fg && fg.src ? fg.H : null; });
+      const fg = figuresFor(u, iso); row.shown[u] = fg && fg.src ? fg.H : null;
+      /* a day whose REPROCESS figure comes from your own fix, the saved log or a typed box has no batch lines:
+         add one line with the figure the Month report shows, so the quantity is in the file */
+      if(!rr.length && fg && fg.src && fg.H > 0){
+        list.push({iso, u, r:{mc:'', buyer:'MONTH REPORT FIGURE (' + (SRC_LABEL[fg.src] || fg.src) + ')', color:'', batch:'', fabric:'no batch lines', qty:fg.H, loadTime:'', unloadTime:'', duration:'', rft:'R/M'}});
+        row.kg[u] = fg.H; } });
     byDay.push(row); }
   if(!list.some(x => x.iso === iso0)) throw new Error('No R/M or R/W batches on ' + labelOf(iso0) + '.');
   const H = ['DATE','UNIT','MC','BUYER','COLOR','BATCH NO','FABRIC','QTY (KG)','LOAD TIME','UNLOAD TIME','DURATION','RFT','CAUSE'];
@@ -2105,7 +2124,7 @@ async function buildReprocessXlsx(){
   const b2 = [['REPROCESS kg BY DAY - ' + MONTHS[m-1] + ' ' + y], ['DATE','UNIT 1 BATCHES','UNIT 1 KG','UNIT 2 BATCHES','UNIT 2 KG','TOTAL KG','MONTH REPORT SHOWS (U1 + U2)'],
     ...byDay.map(x => [labelOf(x.iso), x.cnt[1], x.kg[1], x.cnt[2], x.kg[2], x.kg[1] + x.kg[2], (x.shown[1] === null && x.shown[2] === null) ? '' : (x.shown[1]||0) + (x.shown[2]||0)])];
   const S = f => byDay.reduce((t,x) => t + f(x), 0);
-  b2.push(['TOTAL', S(x=>x.cnt[1]), S(x=>x.kg[1]), S(x=>x.cnt[2]), S(x=>x.kg[2]), S(x=>x.kg[1]+x.kg[2]), S(x => (x.shown[1]||0) + (x.shown[2]||0))], [], ['The last column is the figure the Month report uses. It differs from the batch list only if you typed your own REPROCESS figure, or the day was stored earlier.']);
+  b2.push(['TOTAL', S(x=>x.cnt[1]), S(x=>x.kg[1]), S(x=>x.cnt[2]), S(x=>x.kg[2]), S(x=>x.kg[1]+x.kg[2]), S(x => (x.shown[1]||0) + (x.shown[2]||0))], [], ['The last column is the figure the Month report uses. A day with no batch lines (your own fix, saved log, typed figure) is listed as one MONTH REPORT FIGURE line, so its kg is counted here too.']);
   const w2 = XLSX.utils.aoa_to_sheet(b2), c2 = (r,c) => w2[XLSX.utils.encode_cell({r,c})] || (w2[XLSX.utils.encode_cell({r,c})] = {t:'s',v:''}), tr = byDay.length + 2;
   for(let c=0;c<7;c++){ c2(0,c).s = cellStyle('A9D08E',{b:1,sz:12}); c2(1,c).s = hs; for(let r=2;r<tr;r++) c2(r,c).s = ds; c2(tr,c).s = ts; }
   w2['!merges'] = [{s:{r:0,c:0},e:{r:0,c:6}}]; w2['!cols'] = [12.9,14.9,12.9,14.9,12.9,12,24.9].map(w => ({wch:w}));
