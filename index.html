@@ -365,6 +365,52 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
 .bset-list{max-height:48vh;overflow:auto;}
 .bset-list td.kw{min-width:240px;white-space:normal;}
 @media (max-width:700px){.bset-add{grid-template-columns:1fr;}}
+
+  /* ===== File router (added section, everything scoped with rt-) ===== */
+  .rt-section{max-width:1080px;margin:0 auto 0;padding:0 20px;}
+  .rt-box{background:var(--card);border:1px solid var(--line);border-radius:8px;}
+  .rt-box>summary{cursor:pointer;padding:14px 18px;list-style:none;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;}
+  .rt-box>summary::-webkit-details-marker{display:none;}
+  .rt-box>summary::before{content:"▸";color:var(--amber);}
+  .rt-box[open]>summary::before{content:"▾";}
+  .rt-title{font-size:15px;font-weight:600;color:var(--ink);}
+  .rt-sub{font-size:12.5px;color:var(--ink-dim);}
+  .rt-inner{padding:4px 18px 18px;}
+  .rt-card{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:14px 16px;margin-top:12px;}
+  .rt-card h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);margin:0 0 10px;font-weight:600;}
+  .rt-card summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--ink);}
+  .rt-p{margin:0 0 6px;font-size:13.5px;line-height:1.5;}
+  .rt-steps{margin:0 0 6px;padding-left:20px;font-size:13.5px;}
+  .rt-steps li{margin:2px 0;}
+  .rt-note{font-size:12.5px;color:var(--ink-dim);margin:8px 0 0;line-height:1.55;}
+  .rt-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .rt-card label{display:block;color:var(--ink-dim);font-size:12.5px;margin-bottom:3px;}
+  .rt-card label.rt-chk{display:flex;gap:6px;align-items:center;color:var(--ink);font-size:13px;margin:0 0 8px;}
+  .rt-in,.rt-card input[type=text],.rt-card input[type=month]{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--ink);background:var(--bg);border:1px solid var(--amber-dim);border-radius:4px;padding:7px 10px;max-width:100%;}
+  .rt-card input[type=text]{width:100%;}
+  .rt-card code{background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px;word-break:break-all;}
+  .rt-drop{padding:30px 20px;}
+  .rt-drop h2{font-size:16px;}
+  .rt-drop p{margin:0;}
+  .rt-rootrow{display:grid;grid-template-columns:150px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line);font-size:13.5px;}
+  @media(max-width:640px){.rt-rootrow{grid-template-columns:1fr;}}
+  .rt-pill{display:inline-block;white-space:nowrap;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;}
+  .rt-pill.rt-ok{background:rgba(95,168,160,.18);color:var(--teal);}
+  .rt-pill.rt-warn{background:rgba(224,163,57,.16);color:var(--amber);}
+  .rt-pill.rt-bad{background:rgba(201,106,78,.18);color:#E6B29F;}
+  .rt-pill.rt-grey{background:var(--bg);color:var(--ink-dim);}
+  .rt-banner{background:rgba(224,163,57,.14);color:var(--amber);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600;}
+  .rt-banner[hidden],.rt-card[hidden],.rt-box [hidden]{display:none !important;}
+  .rt-card table{width:100%;border-collapse:collapse;font-size:13px;}
+  .rt-card th{text-align:left;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-dim);padding:6px 8px;border-bottom:1px solid var(--line);}
+  .rt-card td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top;word-break:break-word;}
+  .rt-card td:last-child{min-width:96px;}
+  .rt-card td select{width:100%;}
+  .rt-dest,.rt-src{color:var(--ink-dim);font-size:12px;}
+  .rt-rule{display:grid;grid-template-columns:1fr 1.3fr .9fr 2fr auto;gap:8px;margin-bottom:10px;align-items:end;}
+  @media(max-width:760px){.rt-rule{grid-template-columns:1fr;}}
+  .rt-empty{color:var(--ink-dim);padding:10px 0;}
+  #rt_log{max-height:200px;overflow:auto;font:12px/1.5 'IBM Plex Mono',monospace;color:var(--ink-dim);white-space:pre-wrap;}
 </style>
 </head>
 <body>
@@ -468,6 +514,72 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
     <button type="button" class="fab" id="fabBtn" aria-expanded="false" aria-controls="actionsPanel" title="Final reports · download options"><span class="fab-ic">⬇</span><span class="fab-tx">Downloads</span></button>
   </div>
 </div>
+<section id="rtRoot" class="rt-section">
+  <details class="rt-box" id="rt_box">
+    <summary><span class="rt-title">File router</span><span class="rt-sub">Drop a ZIP or files, each one is saved into its folder by the file name</span></summary>
+    <div class="rt-inner">
+
+      <div class="rt-card">
+        <h3>1. Connect your two folders (one time only)</h3>
+        <p class="rt-p">A web page is not allowed to write to your drives by itself, so you give it permission once for each folder below:</p>
+        <ol class="rt-steps">
+          <li>Click <b>Choose folder</b> next to it.</li>
+          <li>In the Windows window, go to the folder shown and click <b>Select Folder</b>.</li>
+          <li>If Chrome asks, click <b>Edit files</b> or <b>Allow</b>.</li>
+        </ol>
+        <p class="rt-note">After this the page makes all the sub-folders (unit, month) by itself. The page remembers the folders; on a new day Chrome may ask you to press <b>Allow again</b>.</p>
+        <div id="rt_rootRows"></div>
+      </div>
+
+      <div class="rt-card">
+        <h3>2. Drop your ZIP here</h3>
+        <div class="drop rt-drop" id="rt_drop"><h2>Drop a ZIP, files or folders here</h2><p>or click to browse</p></div>
+        <input type="file" id="rt_fileInput" multiple hidden>
+      </div>
+
+      <div class="rt-card" id="rt_planCard" hidden>
+        <h3>3. Where each file goes</h3>
+        <div id="rt_needBanner" class="rt-banner" hidden></div>
+        <div id="rt_planBody"></div>
+        <div class="rt-row" style="margin-top:12px">
+          <button class="btn primary" id="rt_btnSave">Save to folders</button>
+          <button class="btn" id="rt_btnBrowseAll" hidden>Browse a folder for files with no rule</button>
+          <button class="btn" id="rt_btnZip">Download as organized ZIP</button>
+          <button class="btn" id="rt_btnClear">Clear list</button>
+          <span id="rt_summary" class="rt-note" style="margin:0"></span>
+        </div>
+      </div>
+
+      <div class="rt-card">
+        <details>
+          <summary>Options</summary>
+          <div class="rt-row" style="margin-top:12px;align-items:flex-end">
+            <div><label for="rt_period">Month and year when the file name has none</label><input type="month" class="rt-in" id="rt_period"></div>
+            <div><label for="rt_conflict">If a file already exists</label>
+              <select id="rt_conflict" class="rt-in">
+                <option value="rename">Keep both (add a number)</option>
+                <option value="overwrite">Replace it</option>
+                <option value="skip">Skip it</option>
+              </select></div>
+            <label class="rt-chk"><input type="checkbox" id="rt_fromName" checked> Take the month from the file name (e.g. 09 OCT)</label>
+            <label class="rt-chk"><input type="checkbox" id="rt_auto" checked> Save right after dropping</label>
+          </div>
+        </details>
+      </div>
+
+      <div class="rt-card">
+        <details id="rt_rulesBox">
+          <summary>Routing rules (file name contains &rarr; folder)</summary>
+          <p class="rt-note">A file goes to the first rule that fits its name. In "File name contains", separate words with commas: every word must be in the file name. Start a word with <code>!</code> to exclude files that contain it, for example <code>!UNIT-1+2</code>. A single <code>*</code> means every file (keep it last). Case, spaces and dashes are ignored. Folder paths are inside the chosen folder; leave empty to save directly into it. Tokens: <code>{YEAR}</code> <code>{MON}</code> (OCT) <code>{MM}</code> (10).</p>
+          <div id="rt_rules" style="margin-top:12px"></div>
+          <div class="rt-row"><button class="btn small" id="rt_btnAddRule">+ Add rule</button><button class="btn small" id="rt_btnReset">Restore the default rules</button></div>
+        </details>
+      </div>
+
+      <div class="rt-card"><h3>Log</h3><div id="rt_log">Nothing yet.</div></div>
+    </div>
+  </details>
+</section>
 <div class="settings-link"><button type="button" id="gSetBtn" title="Change the Google link">Settings · Google link</button></div>
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="modal-box"><h3 id="modalTitle"></h3><div id="modalBody"></div>
   <div class="modal-actions"><button class="btn small" id="modalCancel">Cancel</button><button class="btn small primary" id="modalOk">OK</button></div></div></div>
@@ -1848,7 +1960,7 @@ function tablePng(o){
 function buildBuyerPng(u){
   const rp = buyerReport(reportRows(u)), rows = [];
   const IN = rp.lines.filter(l => l.grp==='IN' && l.qty>0), SUB = rp.lines.filter(l => l.grp==='SUB' && l.qty>0);
-  const grp = (name, list, total, dark, mid, light) => { rows.push({cells:[name, n0(total)], bg:dark, bold:1, fg:'#fff'});
+  const grp = (name, list, total, dark, mid, light) => { rows.push({cells:[name, ''], bg:dark, bold:1, fg:'#fff'});
     list.forEach((l,i) => rows.push({cells:[l.name, n0(l.qty)], bg:i%2?'#fff':light}));
     rows.push({cells:['SUM OF '+name, n0(total)], bg:mid, bold:1}); };
   grp('IN HOUSE', IN, rp.inQty, '#1F7A70', '#9ED3CB', '#E6F4F1'); grp('SUB CONTRACT', SUB, rp.subQty, '#C77D0A', '#F2CB84', '#FFF3DC');
@@ -1864,7 +1976,7 @@ function buildBuyerPngBoth(){
   const grp = (name, g, dark, mid, light) => {
     const idx = pa.lines.map((l,i) => i).filter(i => pa.lines[i].grp === g && pa.lines[i].qty > 0);
     const q = (p,i) => p.lines[i].qty, tot = p => g === 'IN' ? p.inQty : p.subQty;
-    rows.push({cells:[name, n0(tot(p1)), n0(tot(p2)), n0(tot(pa))], bg:dark, bold:1, fg:'#fff'});
+    rows.push({cells:[name, '', '', ''], bg:dark, bold:1, fg:'#fff'});
     idx.forEach((i,k) => rows.push({cells:[pa.lines[i].name, q(p1,i) ? n0(q(p1,i)) : '', q(p2,i) ? n0(q(p2,i)) : '', n0(q(pa,i))], bg:k%2?'#fff':light}));
     rows.push({cells:['SUM OF '+name, n0(tot(p1)), n0(tot(p2)), n0(tot(pa))], bg:mid, bold:1});
   };
@@ -2831,6 +2943,364 @@ $('gSetBtn').addEventListener('click', googleSetup);
   document.addEventListener('keydown', e => { if(e.key === 'Escape') setPanel(false); });
 })();
 
+</script>
+
+<script>
+/* ===== File router (added section; own scope, uses the JSZip already loaded above) ===== */
+(function(){
+//#PURE-START
+const MON=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const MAILPATH='DAILY DYEING PRODUCTION REPORT/{YEAR}/PRODUCTION REPORT (MAIL)/PRODUCTON REPORT (MAIL) - {MON}';
+const ACTPATH='DAILY DYEING PRODUCTION REPORT/{YEAR}/PRODUCTION REPORT (ACTUAL)/ACTUAL FLOOR REPORT ({MON})-{YEAR}';
+const DEFAULT_RULES=[
+  {n:'Actual floor report - Unit 1',k:'ACTUAL FLOOR REPORT, U-1, !U-1+2',r:'reports',p:ACTPATH+'/UNIT - 1'},
+  {n:'Actual floor report - Unit 2',k:'ACTUAL FLOOR REPORT, U-2, !U-1+2',r:'reports',p:ACTPATH+'/UNIT - 2'},
+  {n:'Final production report - Unit 1',k:'FINAL PRODUCTION REPORT, UNIT-1, !UNIT-1+2',r:'reports',p:MAILPATH+'/UNIT - 1'},
+  {n:'Final production report - Unit 2',k:'FINAL PRODUCTION REPORT, UNIT-2, !UNIT-1+2',r:'reports',p:MAILPATH+'/UNIT - 2'},
+  {n:'Buyer wise report .png - Others folder',k:'BUYER WISE REPORT, PNG',r:'other',p:''},
+  {n:'Buyer wise report - Unit 1',k:'BUYER WISE REPORT, UNIT-1, !UNIT-1+2',r:'reports',p:MAILPATH+'/UNIT - 1'},
+  {n:'Buyer wise report - Unit 2',k:'BUYER WISE REPORT, UNIT-2, !UNIT-1+2',r:'reports',p:MAILPATH+'/UNIT - 2'},
+  {n:'Everything else',k:'*',r:'other',p:''}
+];
+function norm(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
+/* a rule is several words separated by commas: all must appear (as whole words, in order);
+   a word starting with ! must NOT appear; "*" matches everything */
+function ruleMatches(n,k){
+  if(String(k).trim()==='*')return true;
+  const hay=' '+n+' ';let any=false;
+  for(let t of String(k).split(',')){
+    t=t.trim();if(!t)continue;
+    const neg=t[0]==='!';if(neg)t=t.slice(1);
+    const w=norm(t);if(!w)continue;
+    const has=hay.includes(' '+w+' ');
+    if(neg){if(has)return false}else{any=true;if(!has)return false}
+  }
+  return any;
+}
+function matchRule(name,rules){
+  const n=norm(name);
+  for(let i=0;i<rules.length;i++){if(ruleMatches(n,rules[i].k))return i}
+  return -1;
+}
+/* month (and year, if written right after it) found in a file name, e.g. "09 OCT 26" */
+function detectMonth(name){
+  const t=norm(name).split(' ');
+  for(let i=0;i<t.length;i++){
+    if(!/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)$/.test(t[i]))continue;
+    const m=MON.indexOf(t[i].slice(0,3).toUpperCase());
+    let y=null;const nx=t[i+1]||'';
+    if(/^20\d\d$/.test(nx))y=+nx;else if(/^[23]\d$/.test(nx))y=2000+ +nx;
+    return{m:m+1,y:y};
+  }
+  return null;
+}
+function resolvePath(p,y,m){
+  return p.replace(/\{YEAR\}/gi,String(y)).replace(/\{MON\}/gi,MON[m-1]).replace(/\{MM\}/gi,String(m).padStart(2,'0'));
+}
+function cleanSeg(s){return s.replace(/[<>:"|?*]/g,'-').replace(/[. ]+$/,'').trim()}
+function splitPath(p){return p.split(/[\\/]+/).map(cleanSeg).filter(Boolean)}
+function numbered(name,n){const i=name.lastIndexOf('.');return i>0?name.slice(0,i)+' ('+n+')'+name.slice(i):name+' ('+n+')'}
+async function expand(file,out,src){
+  if(/\.zip$/i.test(file.name)){
+    try{
+      const z=await JSZip.loadAsync(file);
+      for(const [path,entry] of Object.entries(z.files)){
+        if(entry.dir)continue;
+        const base=path.split('/').pop();
+        if(!base||base.startsWith('.')||path.startsWith('__MACOSX/')||/^thumbs\.db$/i.test(base))continue;
+        const blob=await entry.async('blob');
+        await expand(new File([blob],base),out,(src?src+' > ':'')+file.name+' > '+path);
+      }
+    }catch(e){out.push({file:file,src:src,err:'Could not open this ZIP'})}
+  }else out.push({file:file,src:src});
+}
+//#PURE-END
+
+/* the two places files can go; the person connects each once */
+const ROOTS={
+  reports:{label:'Reports folder',expect:'Daily Production Report & Summary',where:'D:\\Daily Production Report & Summary'},
+  other:{label:'Other files folder',expect:'other files',where:'C:\\Users\\User\\Desktop\\Production Report\\other files'}
+};
+const handles={reports:null,other:null};
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let rules=loadRules(),items=[],uid=0;
+const rootOf=r=>(r&&r.r&&ROOTS[r.r])?r.r:'reports';
+
+function loadRules(){
+  try{
+    const r=JSON.parse(localStorage.getItem('fr_rules_v3'));
+    if(Array.isArray(r)&&r.length){
+      /* older saved rules: add the buyer wise .png rule once, ahead of the other buyer wise rules */
+      if(!r.some(x=>/png/i.test(x.k||''))){
+        const i=r.findIndex(x=>/buyer wise report/i.test(x.k||''));
+        r.splice(i<0?Math.max(r.length-1,0):i,0,JSON.parse(JSON.stringify(DEFAULT_RULES[4])));
+        try{localStorage.setItem('fr_rules_v3',JSON.stringify(r))}catch(e){}
+      }
+      return r;
+    }
+  }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT_RULES));
+}
+function saveRules(){try{localStorage.setItem('fr_rules_v3',JSON.stringify(rules))}catch(e){}}
+
+/* remember the chosen folders */
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open('file-router',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function kvGet(k){const db=await idb();return new Promise((res,rej)=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
+async function kvSet(k,v){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>res();t.onerror=()=>rej(t.error)})}
+
+function log(m){const el=$('#rt_log');if(el.dataset.n!=='1'){el.textContent='';el.dataset.n='1'}el.textContent+=new Date().toLocaleTimeString()+'  '+m+'\n';el.scrollTop=el.scrollHeight}
+
+/* month and year */
+(function(){const d=new Date();$('#rt_period').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')})();
+function period(){const v=$('#rt_period').value;const a=v.split('-').map(Number);if(a.length===2&&a[0]&&a[1])return{y:a[0],m:a[1]};const d=new Date();return{y:d.getFullYear(),m:d.getMonth()+1}}
+function itemPeriod(it){
+  const p=period();
+  if($('#rt_fromName').checked){const d=detectMonth(it.name);if(d)return{y:d.y||p.y,m:d.m}}
+  return p;
+}
+function hasDest(it){return it.rule>=0||!!it.dir}
+function destParts(it){if(it.dir)return[it.dir.name];const q=itemPeriod(it);return splitPath(resolvePath(rules[it.rule].p,q.y,q.m))}
+function destLabel(it){
+  if(it.dir)return 'Browsed folder: '+it.dir.name;
+  const id=rootOf(rules[it.rule]),R=ROOTS[id],h=handles[id];
+  let base=R.where;
+  if(h&&h.name.toLowerCase()!==R.expect.toLowerCase())base='['+h.name+']';
+  return [base].concat(destParts(it)).join('\\');
+}
+
+/* folder access */
+async function permState(id){const h=handles[id];if(!h||!h.queryPermission)return'none';try{return await h.queryPermission({mode:'readwrite'})}catch(e){return'none'}}
+async function renderRoots(){
+  let h='';
+  for(const id of Object.keys(ROOTS)){
+    const R=ROOTS[id],hd=handles[id];let cls='grey',txt='Not connected',needAllow=false;
+    if(hd){
+      const p=await permState(id);
+      if(p==='granted'){
+        const ok=hd.name.toLowerCase()===R.expect.toLowerCase();
+        cls=ok?'ok':'warn';txt=ok?'Connected':'Connected, but you picked "'+hd.name+'" (expected "'+R.expect+'")';
+      }else{cls='warn';txt='Needs permission: press Allow again';needAllow=true}
+    }
+    h+='<div class="rt-rootrow"><div><b>'+esc(R.label)+'</b></div><div><code>'+esc(R.where)+'</code><div style="margin-top:6px"><span class="rt-pill rt-'+cls+'">'+esc(txt)+'</span></div></div><div class="rt-row">'
+      +(needAllow?'<button class="btn small primary" data-allow="'+id+'">Allow again</button>':'')
+      +'<button class="btn small'+(hd?'':' primary')+'" data-pick="'+id+'">'+(hd?'Change folder':'Choose folder')+'</button></div></div>';
+  }
+  const box=$('#rt_rootRows');box.innerHTML=h;
+  box.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>pickRoot(b.dataset.pick));
+  box.querySelectorAll('[data-allow]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.allow;try{await handles[id].requestPermission({mode:'readwrite'})}catch(e){}
+    await renderRoots();render();
+  });
+}
+async function pickRoot(id){
+  if(!window.showDirectoryPicker){alert('This browser cannot save into folders directly. Open this page in Chrome or Edge, or use "Download as organized ZIP".');return}
+  try{
+    const h=await window.showDirectoryPicker({id:'root-'+id,mode:'readwrite'});
+    handles[id]=h;try{await kvSet('root_'+id,h)}catch(e){}
+    log(ROOTS[id].label+' connected: '+h.name);
+    await renderRoots();render();
+  }catch(e){if(e.name!=='AbortError')log('Could not choose folder: '+e.message)}
+}
+
+/* collecting files */
+async function walk(e,out){
+  if(e.isFile){out.push(await new Promise((res,rej)=>e.file(res,rej)))}
+  else if(e.isDirectory){
+    const r=e.createReader();let all=[];
+    while(true){const b=await new Promise((res,rej)=>r.readEntries(res,rej));if(!b.length)break;all=all.concat(b)}
+    for(const c of all)await walk(c,out);
+  }
+}
+function collect(dt){
+  const entries=[...(dt.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+  const plain=[...(dt.files||[])];
+  return (async()=>{
+    const out=[];
+    if(entries.length){for(const e of entries)await walk(e,out)}else out.push(...plain);
+    return out;
+  })();
+}
+async function canAuto(){
+  for(const it of items){
+    if(it.status!=='pending'||!hasDest(it)||it.dir)continue;
+    if((await permState(rootOf(rules[it.rule])))!=='granted')return false;
+  }
+  return true;
+}
+async function addFiles(files){
+  const raw=[];
+  for(const f of files)await expand(f,raw,'');
+  for(const r of raw){
+    const it={id:++uid,file:r.file,name:r.file.name,src:r.src||'',rule:-1,dir:null,status:'pending',msg:''};
+    if(r.err){it.status='error';it.msg=r.err}
+    else{it.rule=matchRule(it.name,rules);if(it.rule<0){it.status='norule';it.msg='No rule matches this name'}}
+    items.push(it);
+  }
+  log('Added '+raw.length+' file(s)');
+  render();
+  if($('#rt_auto').checked&&items.some(i=>i.status==='pending')&&(await canAuto()))await saveAll();
+}
+const drop=$('#rt_drop');
+/* the whole File router section accepts a drop (not only the small box), so a file dropped anywhere on it is taken */
+const rtSec=document.getElementById('rtRoot');
+const isFileDrag=e=>{const t=e.dataTransfer&&e.dataTransfer.types;return !!t&&(t.indexOf?t.indexOf('Files')>=0:[].slice.call(t).indexOf('Files')>=0)};
+['dragenter','dragover'].forEach(ev=>rtSec.addEventListener(ev,e=>{
+  if(!isFileDrag(e))return;
+  e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';
+  drop.classList.add('drag');
+  const b=document.getElementById('rt_box');if(b&&!b.open)b.open=true;
+}));
+rtSec.addEventListener('dragleave',e=>{if(!rtSec.contains(e.relatedTarget))drop.classList.remove('drag')});
+rtSec.addEventListener('drop',e=>{
+  if(!isFileDrag(e))return;
+  e.preventDefault();e.stopPropagation();drop.classList.remove('drag');
+  const p=collect(e.dataTransfer);p.then(addFiles);
+});
+drop.onclick=()=>$('#rt_fileInput').click();
+$('#rt_fileInput').onchange=e=>{const f=[...e.target.files];e.target.value='';addFiles(f)};
+
+/* plan table */
+function chip(it){
+  const map={pending:['grey','Ready'],saved:['ok','Saved'],skipped:['warn','Skipped'],norule:['warn','No rule'],error:['bad','Error']};
+  const[c,t]=map[it.status]||['grey',it.status];
+  return '<span class="rt-pill rt-'+c+'">'+t+'</span>'+(it.msg?'<div class="rt-src">'+esc(it.msg)+'</div>':'');
+}
+async function updateBanner(){
+  const b=$('#rt_needBanner'),miss=[];
+  const ids=[...new Set(items.filter(i=>i.status==='pending'&&i.rule>=0&&!i.dir).map(i=>rootOf(rules[i.rule])))];
+  for(const id of ids){if(!handles[id]||(await permState(id))!=='granted')miss.push(ROOTS[id].label)}
+  b.hidden=!miss.length;
+  b.textContent=miss.length?'Before saving: connect or allow the '+miss.join(' and the ')+' in step 1 (scroll up).':'';
+}
+function render(){
+  $('#rt_planCard').hidden=!items.length;
+  if(!items.length)return;
+  let h='<table><thead><tr><th>File</th><th>Goes to</th><th>Status</th></tr></thead><tbody>';
+  for(const it of items){
+    const opts='<option value="-1"'+(!hasDest(it)?' selected':'')+'>Choose folder...</option>'
+      +(it.dir?'<option value="custom" selected>Folder: '+esc(it.dir.name)+'</option>':'')
+      +'<option value="browse">Browse for a folder...</option>'
+      +rules.map((r,i)=>'<option value="'+i+'"'+(!it.dir&&it.rule===i?' selected':'')+'>'+esc(r.n||r.k)+'</option>').join('');
+    h+='<tr><td>'+esc(it.name)+(it.src?'<div class="rt-src">from '+esc(it.src)+'</div>':'')+'</td><td><select class="rt-in" data-id="'+it.id+'"'+(it.status==='saved'?' disabled':'')+'>'+opts+'</select>'+(hasDest(it)?'<div class="rt-dest">'+esc(destLabel(it))+'</div>':'')+'</td><td>'+chip(it)+'</td></tr>';
+  }
+  h+='</tbody></table>';
+  $('#rt_planBody').innerHTML=h;
+  $('#rt_planBody').querySelectorAll('select').forEach(s=>s.onchange=()=>{
+    const it=items.find(x=>x.id==s.dataset.id);
+    if(s.value==='browse'){browseFor([it]);return}
+    if(s.value==='custom')return;
+    it.dir=null;it.rule=+s.value;
+    if(it.rule>=0){it.status='pending';it.msg=''}else{it.status='norule';it.msg='No rule matches this name'}
+    render();
+  });
+  const c={saved:0,pending:0,bad:0};items.forEach(i=>{if(i.status==='saved')c.saved++;else if(i.status==='pending')c.pending++;else c.bad++});
+  $('#rt_summary').textContent=c.saved+' saved, '+c.pending+' ready, '+c.bad+' need attention';
+  $('#rt_btnSave').disabled=!c.pending;
+  $('#rt_btnZip').disabled=!items.some(hasDest);
+  $('#rt_btnBrowseAll').hidden=!items.some(i=>i.status==='norule'&&!i.dir);
+  updateBanner();
+}
+
+/* browse for a destination folder (for files that have no rule) */
+async function browseFor(list){
+  if(!window.showDirectoryPicker){alert('This browser cannot pick a folder to save into. Use Chrome or Edge.');render();return}
+  try{
+    const opt={id:'browse-dest',mode:'readwrite'};
+    const h=await window.showDirectoryPicker(opt);
+    for(const it of list){it.dir=h;it.status='pending';it.msg=''}
+    log('Folder chosen for '+list.length+' file(s): '+h.name);
+  }catch(e){if(e.name!=='AbortError')log('Could not choose folder: '+e.message)}
+  render();
+}
+$('#rt_btnBrowseAll').onclick=()=>browseFor(items.filter(i=>i.status==='norule'&&!i.dir));
+
+/* saving */
+async function dirFor(id,parts){let d=handles[id];for(const s of parts)d=await d.getDirectoryHandle(s,{create:true});return d}
+async function exists(d,name){try{await d.getFileHandle(name);return true}catch(e){return false}}
+async function saveItem(it){
+  const parts=destParts(it);
+  const id=it.dir?null:rootOf(rules[it.rule]);
+  const d=it.dir?it.dir:await dirFor(id,parts);
+  let name=it.name;const mode=$('#rt_conflict').value;
+  if(await exists(d,name)){
+    if(mode==='skip'){it.status='skipped';it.msg='Already exists, left untouched';return}
+    if(mode==='rename'){let n=1;while(await exists(d,numbered(name,n)))n++;name=numbered(name,n)}
+  }
+  const fh=await d.getFileHandle(name,{create:true});
+  const w=await fh.createWritable();await w.write(it.file);await w.close();
+  it.status='saved';it.msg=name!==it.name?'Saved as '+name:'';
+  log('Saved '+name+' -> '+destLabel(it));
+}
+async function saveAll(){
+  const pend=items.filter(i=>i.status==='pending'&&hasDest(i));
+  const need=[...new Set(pend.filter(i=>!i.dir).map(i=>rootOf(rules[i.rule])))];
+  for(const id of need){
+    if(!handles[id]){alert('First connect the "'+ROOTS[id].label+'" in step 1.');return}
+    let p=await permState(id);
+    if(p!=='granted'){try{p=await handles[id].requestPermission({mode:'readwrite'})}catch(e){p='denied'}}
+    if(p!=='granted'){alert('Press "Allow again" next to the "'+ROOTS[id].label+'" in step 1, then press Save again.');await renderRoots();return}
+  }
+  await renderRoots();
+  for(const it of pend){
+    try{await saveItem(it)}
+    catch(e){it.status='error';it.msg=(e.name==='NoModificationAllowedError'||e.name==='InvalidStateError')?'File is open in another program. Close it and save again.':e.message;log('Error on '+it.name+': '+e.message)}
+    render();
+  }
+  render();
+}
+$('#rt_btnSave').onclick=saveAll;
+
+/* fallback: organized zip */
+$('#rt_btnZip').onclick=async()=>{
+  const z=new JSZip();let n=0;
+  for(const it of items){
+    if(!hasDest(it))continue;
+    let parts=destParts(it);
+    if(!it.dir&&rootOf(rules[it.rule])==='other')parts=['other files'].concat(parts);
+    z.file(parts.concat(it.name).join('/'),it.file);n++;
+  }
+  if(!n)return;
+  const blob=await z.generateAsync({type:'blob'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='organized-reports.zip';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  log('Downloaded organized-reports.zip ('+n+' files).');
+};
+$('#rt_btnClear').onclick=()=>{items=[];render()};
+
+/* rules editor */
+function rematch(){
+  items.forEach(it=>{
+    if(it.dir||it.status==='saved')return;
+    it.rule=matchRule(it.name,rules);
+    it.status=it.rule>=0?'pending':'norule';it.msg=it.rule>=0?'':'No rule matches this name';
+  });
+}
+function renderRules(){
+  const box=$('#rt_rules');
+  box.innerHTML=rules.map((r,i)=>'<div class="rt-rule"><div><label>Name</label><input type="text" class="rt-in" data-i="'+i+'" data-f="n" value="'+esc(r.n||'')+'"></div>'
+    +'<div><label>File name contains</label><input type="text" class="rt-in" data-i="'+i+'" data-f="k" value="'+esc(r.k)+'"></div>'
+    +'<div><label>Save into</label><select class="rt-in" data-i="'+i+'" data-f="r">'+Object.keys(ROOTS).map(id=>'<option value="'+id+'"'+(rootOf(r)===id?' selected':'')+'>'+esc(ROOTS[id].label)+'</option>').join('')+'</select></div>'
+    +'<div><label>Folder inside it</label><input type="text" class="rt-in" data-i="'+i+'" data-f="p" value="'+esc(r.p)+'"></div>'
+    +'<div><button class="btn small" data-del="'+i+'">Delete</button></div></div>').join('')||'<div class="rt-empty">No rules yet.</div>';
+  box.querySelectorAll('input,select').forEach(inp=>inp.addEventListener('input',()=>{
+    rules[+inp.dataset.i][inp.dataset.f]=inp.value;saveRules();rematch();render();
+  }));
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{rules.splice(+b.dataset.del,1);saveRules();rematch();renderRules();render()});
+}
+$('#rt_btnAddRule').onclick=()=>{rules.push({n:'',k:'',r:'reports',p:''});saveRules();renderRules()};
+$('#rt_btnReset').onclick=()=>{rules=JSON.parse(JSON.stringify(DEFAULT_RULES));saveRules();rematch();renderRules();render()};
+$('#rt_period').onchange=render;$('#rt_fromName').onchange=render;
+
+/* start */
+(async function(){
+  renderRules();
+  for(const id of Object.keys(ROOTS)){try{const h=await kvGet('root_'+id);if(h)handles[id]=h}catch(e){}}
+  await renderRoots();
+  if(!window.showDirectoryPicker)log('This browser cannot save into folders. Use Chrome or Edge, or the ZIP download.');
+})();
+})();
 </script>
 
 </body>
