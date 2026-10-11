@@ -86,3 +86,12 @@ The `#` of a row turns green when it is a production batch (has a batch number a
 - **Wrong buyer name? Count it as the correct buyer** (By buyer tab, above the totals): pick the wrong buyer from the list of names found in the loaded file, pick the correct buyer, press **Correct it**. The name is replaced in every loaded entry, so the buyer report, all exported files and the corrected main file carry the correct buyer. It works for any buyer, not only unrecognised ones, and is remembered for the next load. **Stop correcting** (same panel, or Buyer list) undoes it.
 - If you had already edited the keywords of MARB TEX in **Buyer list**, your own keyword list replaces the built-in one, so add INTIMATE there too (or press Reset my changes). If you had added IRISH DESIGN yourself in Buyer list, remove your copy.
 
+
+## Actual file: print setup, colours, SAMPLE (latest)
+- **Sheet1 look:** navy header (white text); rows of **odd machine numbers sky blue**, even machine numbers no fill; SAMPLE lines navy with white text.
+- **Print setup (as in your edited file):** Sheet1 landscape A4, narrow side margins, fitted to one page wide (max 2 pages tall), print area A:O (the UNIT column is not printed). CATEGORY sheets portrait A4, fitted to one page, print area A:J. BATCHMC sheets landscape A4, one page wide.
+- **SAMPLE formulas:** CATEGORY U1 / BATCHMC U1 count only **SAMPLE1**, CATEGORY U2 / BATCHMC U2 count only **SAMPLE2** (before, both counted every SAMPLE line on Sheet1). The same fix is in the single-unit actual files. LOADING % in BATCHMC now divides by the capacity of that unit's machines only.
+
+## Actual file: every page fills an A4 page (latest)
+- **Category sheets portrait, every other sheet landscape** (Sheet1, BATCHMC, TOTAL U1+2). Sheet1 may take 2 pages, every other sheet exactly 1.
+- Each sheet is scaled to the biggest size at which its print area still fits the A4 page (about 4 % spare), centred sideways. This is a fixed Excel scale worked out from the column widths and row heights, so the page is filled instead of only shrunk. Print areas are set on every sheet. Same for the single-unit actual files.

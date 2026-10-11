@@ -1756,7 +1756,15 @@ function sheetXmlOk(x){   // well formed AND parts in the order Excel demands; o
     return true;
   }catch(e){ return false; }
 }
-/* specs[i] = {o:'landscape'|'portrait', fh0:bool (fit width only), zn:zoomScaleNormal, colBrk:bool} for sheet i+1; tabSheet = index of the sheet that opens first (or null to leave as is) */
+/* size in points of the first nc columns x nr rows of a sheet object (from its column widths and row heights): used to scale a sheet so it FILLS an A4 page */
+function sheetPts(ws, nc, nr){
+  let w = 0, h = 0;
+  for(let i = 0; i < nc; i++){ const c = (ws['!cols'] || [])[i], v = c ? (c.width ?? c.wch ?? 8.43) : 8.43; w += Math.trunc(v * 7 + 5) * 0.75; }
+  for(let i = 0; i < nr; i++){ const r = (ws['!rows'] || [])[i]; if(r && r.hidden) continue; h += (r && r.hpt) || 15; }
+  return {w, h};
+}
+const fitSpec = (ws, nc, nr, o, pages, extra) => ({o, pages, ...sheetPts(ws, nc, nr), ...extra});
+/* specs[i] = {o:'landscape'|'portrait', pages:max pages tall, w/h:content size in pt (the sheet is scaled up or down to fill the A4 page), mg:narrow side margins, zn:zoomScaleNormal, colBrk:bool} for sheet i+1; tabSheet = index of the sheet that opens first (or null to leave as is) */
 async function finishActual(blob, specs, tabSheet){
   try{
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
@@ -1764,15 +1772,22 @@ async function finishActual(blob, specs, tabSheet){
       const f = 'xl/worksheets/sheet' + (i+1) + '.xml', file = zip.file(f); if(!file || !specs[i]) continue;
       const sp = specs[i]; let x = await file.async('string'); const orig = x;
       x = x.replace(/<sheetPr[^>]*\/>|<sheetPr[^>]*>[\s\S]*?<\/sheetPr>/, '');
-      x = x.replace(/(<worksheet[^>]*>)/, m => m + '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>');
+      if(!sp.w) x = x.replace(/(<worksheet[^>]*>)/, m => m + '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>');   // (sheets with a known size get an exact scale instead)
       const old = x.match(/<sheetViews>[\s\S]*?<\/sheetViews>/);
       if(old){
         const sel = tabSheet == null ? /tabSelected="1"/.test(old[0]) : i === tabSheet;
         x = x.replace(old[0], () => '<sheetViews><sheetView' + (sel ? ' tabSelected="1"' : '') + ' view="pageBreakPreview" zoomScale="60" zoomScaleNormal="' + sp.zn + '" workbookViewId="0"/></sheetViews>');
       }
-      const pm = '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9"' + (sp.fh0 ? ' fitToHeight="0"' : '') + ' orientation="' + sp.o + '"/>'
+      const mg = sp.mg ? 'left="0.25" right="0.25"' : 'left="0.7" right="0.7"';   // Sheet1: narrow side margins
+      let scaleAttr = '';
+      if(sp.w && sp.h){   // biggest scale at which the whole print area still fits the A4 page(s), 4 % spare so it never spills over
+        const pw = sp.o === 'landscape' ? 842 : 595, ph = sp.o === 'landscape' ? 595 : 842, L = sp.mg ? 0.25 : 0.7;
+        const sc = Math.max(20, Math.min(400, Math.floor(Math.min((pw - 2*L*72) / sp.w, (sp.pages || 1) * (ph - 1.5*72) / sp.h) * 96)));
+        scaleAttr = ' scale="' + sc + '"';
+      }
+      const pm = '<printOptions horizontalCentered="1"/><pageMargins ' + mg + ' top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9"' + scaleAttr + ' orientation="' + sp.o + '"/>'
         + (sp.colBrk ? '<colBreaks count="1" manualBreakCount="1"><brk id="10" max="1048575" man="1"/></colBreaks>' : '');
-      x = x.replace(/<pageSetup[^>]*\/>/g, '');
+      x = x.replace(/<pageSetup[^>]*\/>/g, '').replace(/<printOptions[^>]*\/>/g, '');
       if(/<pageMargins[^>]*\/>/.test(x)) x = x.replace(/<pageMargins[^>]*\/>/, () => pm);          // same place as the old margins: before ignoredErrors
       else if(x.includes('<ignoredErrors')) x = x.replace('<ignoredErrors', () => pm + '<ignoredErrors');
       else x = x.replace('</worksheet>', () => pm + '</worksheet>');
@@ -1858,8 +1873,8 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   const ws1 = {}, H1 = ['DATE','MACHINE','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRICATION','QTY(KG(','LOAD TIME','UNLOAD TIME','DURATION','RFT','CATEGORY','SHADE', ...(ctx ? ['UNIT'] : [])];
   ws1['A1'] = {t:'s', v:'DAILY ACTUAL PRODUCTION REPORT - ' + Y, s:{font:{name:'Calibri',sz:12,bold:true}}};
   const eThin = {style:'thin',color:{rgb:'000000'}};
-  const hdr1 = {font:{name:'Calibri',sz:11,bold:true,color:{rgb:'000000'}}, fill:{patternType:'solid',fgColor:{rgb:'DDEBF7'}}, alignment:{horizontal:'center',vertical:'center'}, border:{left:eThin,right:eThin,top:eThin}};
-  const dat1 = {font:{name:'Calibri',sz:11}, border:{top:eThin,bottom:eThin,left:eThin,right:eThin}};
+  const hdr1 = {font:{name:'Calibri',sz:11,bold:true,color:{rgb:'FFFFFF'}}, fill:{patternType:'solid',fgColor:{rgb:'000080'}}, alignment:{horizontal:'center',vertical:'center'}, border:{left:eThin,right:eThin,top:eThin,bottom:eThin}};
+  const dat1 = {font:{name:'Calibri',sz:11}, alignment:{horizontal:'center',vertical:'center'}, border:{top:eThin,bottom:eThin,left:eThin,right:eThin}};
   H1.forEach((h,c) => ws1[XLSX.utils.encode_cell({r:2,c})] = {t:'s', v:h, s:{...hdr1}});
   const dateTxt = pad2(Dd)+'.'+pad2(Mo)+'.'+Y;
   rows.forEach((r,i) => {
@@ -1878,8 +1893,10 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
     [[11,r.duration],[12,r.rft],[13,r.category],[14,r.shade]].forEach(([c,v]) => { if(v) put(c, {t:'s', v}); });
     if(ctx) put(15, {t:'s', v:'UNIT ' + r.unit});
   });
-  rows.forEach((r,i) => { for(let c = 0; c <= (ctx ? 15 : 14); c++){ const a = XLSX.utils.encode_cell({r:3+i,c}); const cell = ws1[a] || (ws1[a] = {t:'s', v:''}); cell.s = {...dat1}; } });   // every cell A..O has the thin border, like the template
-  ws1['!ref'] = 'A1:' + (ctx ? 'P' : 'O') + (3 + rows.length);
+  rows.forEach((r,i) => { for(let c = 0; c <= (ctx ? 15 : 14); c++){ const a = XLSX.utils.encode_cell({r:3+i,c}); const cell = ws1[a] || (ws1[a] = {t:'s', v:''}); const mcN = /^\d+$/.test(String(r.mc).trim()) ? +r.mc : NaN, smp = /SAMPLE/i.test(r.mc);
+    cell.s = smp ? {...dat1, font:{name:'Calibri',sz:11,bold:true,color:{rgb:'FFFFFF'}}, fill:{patternType:'solid',fgColor:{rgb:'000080'}}}      // sample line: navy
+      : (mcN % 2 === 1 ? {...dat1, fill:{patternType:'solid',fgColor:{rgb:'87CEEB'}}} : {...dat1}); } });   // odd machine number: sky blue, even: no fill
+  ws1['!ref'] = 'A1:' + (ctx ? 'P' : 'O') + (3 + rows.length); ws1['!autofilter'] = {ref:'A3:O' + (3 + rows.length)};
   ws1['!cols'] = [15.14,9.86,8.86,23.71,17.43,16.86,20.86,22.86,12.57,13.86,14.29,13.86,10.86,13.43,26.86, ...(ctx ? [10.86] : [])].map(w => ({width:w}));
   ws1['!rows'] = []; ws1['!rows'][0] = {hpt:15.75};
 
@@ -1909,7 +1926,7 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
     set('D', x.D, `SUMPRODUCT(--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),--ISNUMBER(SEARCH("DPD",${rng('N')})),${rng('I')})`);
     set('F', x.F, `SUMPRODUCT(--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),--((ISNUMBER(SEARCH("WHITE",TRIM(${rng('N')})))+ISNUMBER(SEARCH("WASH",TRIM(${rng('N')})))+ISNUMBER(SEARCH("SCOURING",TRIM(${rng('N')})))+ISNUMBER(SEARCH("RFD",TRIM(${rng('N')}))))>0),${rng('I')})`);
     set('H', x.H);
-    set('J', x.J, `SUMPRODUCT(--ISNUMBER(SEARCH("SAMPLE",TRIM(${rng('B')}))),${rng('I')})`);
+    set('J', x.J, `SUMIFS(${rng('I')},${rng('B')},"${cfg.sample}*")`);   // only this unit's sample line (SAMPLE1 / SAMPLE2)
     S2('E'+r, {...fcell(`D${r}/B${r}`, x.B ? x.D/x.B : 0), z:FMT.E, s:{...base}});
     S2('G'+r, {...fcell(`F${r}/B${r}`, x.B ? x.F/x.B : 0), z:FMT.G, s:{...base}});
     S2('I'+r, {...fcell(`H${r}/B${r}`, x.B ? x.H/x.B : 0), z:FMT.I, s:{...base}});
@@ -1934,8 +1951,9 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   merges2.push({s:{r:sg-1,c:3},e:{r:sg-1,c:4}});
   ws2['!ref'] = 'A1:L' + sg; ws2['!merges'] = merges2;
   ws2['!cols'] = [13.29,16,13.71,14.43,10.29,12.71,15.43,12.14,11.57,12.43,22.71,10].map(w => ({width:w}));
-  ws2['!rows'] = []; ws2['!rows'][1] = {hpt:23.1}; ws2['!rows'][3] = {hpt:24.95}; ws2['!rows'][4] = {hpt:36};
-  for(let r = first; r <= sumRow + 3; r++) ws2['!rows'][r-1] = {hpt:24.95};
+  ws2['!rows'] = []; ws2['!rows'][1] = {hpt:23.1}; ws2['!rows'][3] = {hpt:26.1}; ws2['!rows'][4] = {hpt:34.5};   // heights as in your edited file
+  for(let r = first; r <= last; r++) ws2['!rows'][r-1] = {hpt:26.1};
+  for(let r = sumRow; r <= sumRow + 3; r++) ws2['!rows'][r-1] = {hpt:20.1};
   ws2['!rows'][sg-1] = {hpt:15.75};
 
   /* --- BATCHMC: machine wise --- */
@@ -1962,7 +1980,7 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   });
   const blank = (r, a) => 'ABCDEFGHI'.split('').forEach(c => { if(!ws3[c+r]) S3(c+r, {t:'s', v:'', s:{...plain, ...(a||{})}}); });
   S3('A'+rSmp, {t:'s', v:'SAMPLE', s:{...plain}}); blank(rSmp);
-  S3('G'+rSmp, {...fcell(`SUMPRODUCT(--ISNUMBER(SEARCH("SAMPLE",TRIM(${rng('B')}))),${rng('I')})`, sm.J), s:{...plain}});
+  S3('G'+rSmp, {...fcell(`SUMIFS(${rng('I')},${rng('B')},"${cfg.sample}*")`, sm.J), s:{...plain}});
   if(hasOther){
     S3('A'+rOth, {t:'s', v:'OTHER MC', s:{...plain}}); blank(rOth);
     S3('G'+rOth, {...fcell(`G${rTot}-SUM(G${m0}:G${mN})-G${rSmp}`, sm.other), s:{...plain}});
@@ -1982,7 +2000,7 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   S3('G'+r1, {t:'s', v: cfg.skip.length ? 'average is without mc ' + cfg.skip.join(',') : 'average of all machines', s:cellStyle(null,{b:1,sz:9,wrap:1})});
   S3('H'+r1, {t:'s', v:'', s:cellStyle(null,big)}); merges3.push({s:{r:r1-1,c:6},e:{r:r1-1,c:7}});
   S3('A'+r2, {t:'s', v:'LOADING % =', s:cellStyle(null,big)}); S3('B'+r2, {t:'s', v:'', s:cellStyle(null,big)}); merges3.push({s:{r:r2-1,c:0},e:{r:r2-1,c:1}});
-  S3('C'+r2, {...fcell(`C${r1}/SUMPRODUCT(--ISNUMBER(${rng('I')}),${rng('C')})%`, sm.loading ?? 0), z:'0.0', s:cellStyle(null,big)});
+  S3('C'+r2, {...fcell(`C${r1}/SUMPRODUCT(--ISNUMBER(${rng('I')}),--ISNUMBER(${rng('B')}),--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),${rng('C')})%`, sm.loading ?? 0), z:'0.0', s:cellStyle(null,big)});
   const rs = r2 + 4;
   [['A','PREPARED BY'],['E','MANAGER'],['G','AGM'],['I','GM']].forEach(([c,t]) => S3(c+rs, {t:'s', v:t, s:{font:{name:'Calibri',sz:12,underline:true}, alignment:{horizontal:'center'}}}));
   ws3['!ref'] = 'A1:I' + rs; ws3['!merges'] = merges3; ws3['!cols'] = wid.map(w => ({width:w}));
@@ -1990,12 +2008,12 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   for(let r = m0; r <= rTot; r++) ws3['!rows'][r-1] = {hpt:15.75};
   ws3['!rows'][r1-1] = {hpt:26.1}; ws3['!rows'][r2-1] = {hpt:15.75}; ws3['!rows'][rs-1] = {hpt:15.75};
 
-  if(ctx) return {ws1, ws2, ws3, sg};
+  if(ctx) return {ws1, ws2, ws3, sg, rs, last1:3 + rows.length};
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws1, 'Sheet1'); XLSX.utils.book_append_sheet(wb, ws2, 'CATEGORY'); XLSX.utils.book_append_sheet(wb, ws3, 'BATCHMC');
-  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}, Names:[{Name:'_xlnm.Print_Area', Ref:'CATEGORY!$A$1:$J$' + sg, Sheet:1}], Views:[{activeTab:2}]};
+  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}, Names:[{Name:'_xlnm.Print_Area', Ref:'Sheet1!$A$1:$O$' + (3 + rows.length), Sheet:0}, {Name:'_xlnm.Print_Area', Ref:'CATEGORY!$A$1:$J$' + sg, Sheet:1}, {Name:'_xlnm.Print_Area', Ref:'BATCHMC!$A$1:$I$' + rs, Sheet:2}], Views:[{activeTab:2}]};
   const fname = `ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-${u}).xlsx`;
-  return finishActual(aoaBlob(wb), [{o:'landscape', fh0:true, zn:75}, {o:'portrait', fh0:true, zn:100, colBrk:true}, {o:'landscape', fh0:false, zn:100}], 2).then(blob => ({name:fname, blob}));
+  return finishActual(aoaBlob(wb), [fitSpec(ws1, 15, 3 + rows.length, 'landscape', 2, {mg:1, zn:75}), fitSpec(ws2, 10, sg, 'portrait', 1, {zn:100, colBrk:true}), fitSpec(ws3, 9, rs, 'landscape', 1, {zn:100})], 2).then(blob => ({name:fname, blob}));
 }
 
 /* ---------- PNG helper: minimum column widths, coloured head, zebra rows ---------- */
@@ -2119,9 +2137,11 @@ async function buildActualBothXlsx(){
   d.H.forEach((h,c) => ws[XLSX.utils.encode_cell({r:1,c})].s = hs);
   [...d.body, d.foot].forEach((row,i) => row.forEach((v,c) => { const a = XLSX.utils.encode_cell({r:i+2,c}); const cell = ws[a] || (ws[a] = {t:'s',v:''}); cell.s = cellStyle(null,{b:1,sz:11}); }));
   ws['!cols'] = d.H.map((h,c) => ({wch: c===0 ? 12 : Math.max(9, h.length+2)}));
+  ws['!rows'] = [{hpt:22},{hpt:32}];
+  const nTot = d.body.length + 3;
   XLSX.utils.book_append_sheet(wb, ws, 'TOTAL U1+2');
-  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}, Names: parts.map((p,i) => ({Name:'_xlnm.Print_Area', Ref:"'CATEGORY U" + p.u + "'!$A$1:$J$" + p.sg, Sheet:1 + 2*i}))};
-  const specs = [{o:'landscape', fh0:true, zn:75}]; parts.forEach(() => { specs.push({o:'portrait', fh0:true, zn:100, colBrk:true}); specs.push({o:'landscape', fh0:false, zn:100}); });
+  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}, Names: [{Name:'_xlnm.Print_Area', Ref:'Sheet1!$A$1:$O$' + parts[0].last1, Sheet:0}, ...parts.flatMap((p,i) => [{Name:'_xlnm.Print_Area', Ref:"'CATEGORY U" + p.u + "'!$A$1:$J$" + p.sg, Sheet:1 + 2*i}, {Name:'_xlnm.Print_Area', Ref:"'BATCHMC U" + p.u + "'!$A$1:$I$" + p.rs, Sheet:2 + 2*i}]), {Name:'_xlnm.Print_Area', Ref:"'TOTAL U1+2'!$A$1:$K$" + nTot, Sheet:1 + 2*parts.length}]};
+  const specs = [fitSpec(parts[0].ws1, 15, parts[0].last1, 'landscape', 2, {mg:1, zn:75})]; parts.forEach(p => { specs.push(fitSpec(p.ws2, 10, p.sg, 'portrait', 1, {zn:100, colBrk:true})); specs.push(fitSpec(p.ws3, 9, p.rs, 'landscape', 1, {zn:100})); }); specs.push(fitSpec(ws, 11, nTot, 'landscape', 1, {zn:100}));
   const blob = await finishActual(aoaBlob(wb), specs, null);
   return {name:`ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-1+2).xlsx`, blob};
 }
