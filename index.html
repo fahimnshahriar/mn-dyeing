@@ -1745,6 +1745,42 @@ const cellStyle = (fill,o={}) => {
   if(!o.nob){ const e = {style:'thin',color:{rgb:'000000'}}; st.border = {top:e,bottom:e,left:e,right:e}; }
   return st;
 };
+/* ---------- ACTUAL file finishing: page setup, zoom/view, print area, written exactly like the template ---------- */
+const WS_ORDER = ['sheetPr','dimension','sheetViews','sheetFormatPr','cols','sheetData','sheetCalcPr','sheetProtection','protectedRanges','scenarios','autoFilter','sortState','dataConsolidate','customSheetViews','mergeCells','phoneticPr','conditionalFormatting','dataValidations','hyperlinks','printOptions','pageMargins','pageSetup','headerFooter','rowBreaks','colBreaks','customProperties','cellWatches','ignoredErrors','smartTags','drawing','legacyDrawing','legacyDrawingHF','picture','oleObjects','controls','webPublishItems','tableParts','extLst'];
+function sheetXmlOk(x){   // well formed AND parts in the order Excel demands; otherwise the original sheet is kept untouched
+  try{
+    const d = new DOMParser().parseFromString(x, 'application/xml');
+    if(d.getElementsByTagName('parsererror').length) return false;
+    let last = -1;
+    for(const ch of d.documentElement.children){ const i = WS_ORDER.indexOf(ch.localName); if(i < 0 || i < last) return false; last = i; }
+    return true;
+  }catch(e){ return false; }
+}
+/* specs[i] = {o:'landscape'|'portrait', fh0:bool (fit width only), zn:zoomScaleNormal, colBrk:bool} for sheet i+1; tabSheet = index of the sheet that opens first (or null to leave as is) */
+async function finishActual(blob, specs, tabSheet){
+  try{
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    for(let i = 0; i < specs.length; i++){
+      const f = 'xl/worksheets/sheet' + (i+1) + '.xml', file = zip.file(f); if(!file || !specs[i]) continue;
+      const sp = specs[i]; let x = await file.async('string'); const orig = x;
+      x = x.replace(/<sheetPr[^>]*\/>|<sheetPr[^>]*>[\s\S]*?<\/sheetPr>/, '');
+      x = x.replace(/(<worksheet[^>]*>)/, m => m + '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>');
+      const old = x.match(/<sheetViews>[\s\S]*?<\/sheetViews>/);
+      if(old){
+        const sel = tabSheet == null ? /tabSelected="1"/.test(old[0]) : i === tabSheet;
+        x = x.replace(old[0], () => '<sheetViews><sheetView' + (sel ? ' tabSelected="1"' : '') + ' view="pageBreakPreview" zoomScale="60" zoomScaleNormal="' + sp.zn + '" workbookViewId="0"/></sheetViews>');
+      }
+      const pm = '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9"' + (sp.fh0 ? ' fitToHeight="0"' : '') + ' orientation="' + sp.o + '"/>'
+        + (sp.colBrk ? '<colBreaks count="1" manualBreakCount="1"><brk id="10" max="1048575" man="1"/></colBreaks>' : '');
+      x = x.replace(/<pageSetup[^>]*\/>/g, '');
+      if(/<pageMargins[^>]*\/>/.test(x)) x = x.replace(/<pageMargins[^>]*\/>/, () => pm);          // same place as the old margins: before ignoredErrors
+      else if(x.includes('<ignoredErrors')) x = x.replace('<ignoredErrors', () => pm + '<ignoredErrors');
+      else x = x.replace('</worksheet>', () => pm + '</worksheet>');
+      zip.file(f, sheetXmlOk(x) ? x : orig);
+    }
+    return await zip.generateAsync({type:'blob', mimeType:blob.type});
+  }catch(e){ console.error(e); return blob; }
+}
 const NOCACHE = () => !!window.__NOCACHE;     // test switch: leave cached values out so Excel/LibreOffice must calculate
 
 /* ---------- FINAL file (FINAL PRODUCTION REPORT: Sheet1 / CALCULATION / DONT DELETE) ---------- */
@@ -1821,7 +1857,10 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   /* --- Sheet1: the day's rows exactly as typed (brackets stay, so unfinished batches stay out of the totals) --- */
   const ws1 = {}, H1 = ['DATE','MACHINE','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRICATION','QTY(KG(','LOAD TIME','UNLOAD TIME','DURATION','RFT','CATEGORY','SHADE', ...(ctx ? ['UNIT'] : [])];
   ws1['A1'] = {t:'s', v:'DAILY ACTUAL PRODUCTION REPORT - ' + Y, s:{font:{name:'Calibri',sz:12,bold:true}}};
-  H1.forEach((h,c) => ws1[XLSX.utils.encode_cell({r:2,c})] = {t:'s', v:h, s:cellStyle('DDEBF7',{b:1,sz:11})});
+  const eThin = {style:'thin',color:{rgb:'000000'}};
+  const hdr1 = {font:{name:'Calibri',sz:11,bold:true,color:{rgb:'000000'}}, fill:{patternType:'solid',fgColor:{rgb:'DDEBF7'}}, alignment:{horizontal:'center',vertical:'center'}, border:{left:eThin,right:eThin,top:eThin}};
+  const dat1 = {font:{name:'Calibri',sz:11}, border:{top:eThin,bottom:eThin,left:eThin,right:eThin}};
+  H1.forEach((h,c) => ws1[XLSX.utils.encode_cell({r:2,c})] = {t:'s', v:h, s:{...hdr1}});
   const dateTxt = pad2(Dd)+'.'+pad2(Mo)+'.'+Y;
   rows.forEach((r,i) => {
     const row = 3 + i, put = (c, cell) => { ws1[XLSX.utils.encode_cell({r:row,c})] = cell; };
@@ -1839,8 +1878,10 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
     [[11,r.duration],[12,r.rft],[13,r.category],[14,r.shade]].forEach(([c,v]) => { if(v) put(c, {t:'s', v}); });
     if(ctx) put(15, {t:'s', v:'UNIT ' + r.unit});
   });
+  rows.forEach((r,i) => { for(let c = 0; c <= (ctx ? 15 : 14); c++){ const a = XLSX.utils.encode_cell({r:3+i,c}); const cell = ws1[a] || (ws1[a] = {t:'s', v:''}); cell.s = {...dat1}; } });   // every cell A..O has the thin border, like the template
   ws1['!ref'] = 'A1:' + (ctx ? 'P' : 'O') + (3 + rows.length);
-  ws1['!cols'] = [14.3,9,8,22.9,16.6,16,20,22,11.7,13,13.4,13,10,12.6,26, ...(ctx ? [9] : [])].map(w => ({wch:w}));
+  ws1['!cols'] = [15.14,9.86,8.86,23.71,17.43,16.86,20.86,22.86,12.57,13.86,14.29,13.86,10.86,13.43,26.86, ...(ctx ? [10.86] : [])].map(w => ({width:w}));
+  ws1['!rows'] = []; ws1['!rows'][0] = {hpt:15.75};
 
   /* --- CATEGORY: month to date, earlier days as values, this day live from Sheet1 --- */
   const ws2 = {}, merges2 = [], S2 = (a, cell) => ws2[a] = cell, n = mr.n;
@@ -1892,13 +1933,15 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   [['B','PREPARED BY'],['D','MANAGER'],['G','AGM'],['I','GM']].forEach(([c,t]) => S2(c+sg, {t:'s', v:t, s:{font:{name:'Calibri',sz:12,underline:true}, alignment:{horizontal:'center'}}}));
   merges2.push({s:{r:sg-1,c:3},e:{r:sg-1,c:4}});
   ws2['!ref'] = 'A1:L' + sg; ws2['!merges'] = merges2;
-  ws2['!cols'] = [12.4,15.1,12.9,13.6,9.4,11.9,14.6,11.3,10.7,11.6,21.9,9.1].map(w => ({wch:w}));
-  ws2['!rows'] = []; ws2['!rows'][1] = {hpt:23}; ws2['!rows'][3] = {hpt:26}; ws2['!rows'][4] = {hpt:34.5};
+  ws2['!cols'] = [13.29,16,13.71,14.43,10.29,12.71,15.43,12.14,11.57,12.43,22.71,10].map(w => ({width:w}));
+  ws2['!rows'] = []; ws2['!rows'][1] = {hpt:23.1}; ws2['!rows'][3] = {hpt:24.95}; ws2['!rows'][4] = {hpt:36};
+  for(let r = first; r <= sumRow + 3; r++) ws2['!rows'][r-1] = {hpt:24.95};
+  ws2['!rows'][sg-1] = {hpt:15.75};
 
   /* --- BATCHMC: machine wise --- */
   const ws3 = {}, merges3 = [], S3 = (a, cell) => ws3[a] = cell;
   const m0 = 7, mN = m0 + sm.machines.length - 1, rSmp = mN + 1, hasOther = cfg.skip.length > 0, rOth = hasOther ? rSmp + 1 : null, rTot = (rOth || rSmp) + 1;
-  const wid = [12,12,10,10,13,13,12,13,36];
+  const wid = [12.86,12.86,10.86,10.86,13.86,13.86,12.86,13.86,36.86];
   S3('A2', {t:'s', v:'M.N. DYEING, PRINTING & WASHING MILLS LTD.', s:cellStyle(null,{b:1,sz:14,nob:1})}); merges3.push({s:{r:1,c:0},e:{r:1,c:8}});
   S3('A5', {t:'s', v:'UNIT - '+u, s:cellStyle('E7E6E6',{b:1,sz:16})});
   for(let c=1;c<8;c++) S3(XLSX.utils.encode_cell({r:4,c}), {t:'s', v:c===1?'MACHINE WISE PRODUCTION REPORT':'', s:cellStyle(null,{b:1,sz:14,nob:1})});
@@ -1942,14 +1985,17 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   S3('C'+r2, {...fcell(`C${r1}/SUMPRODUCT(--ISNUMBER(${rng('I')}),${rng('C')})%`, sm.loading ?? 0), z:'0.0', s:cellStyle(null,big)});
   const rs = r2 + 4;
   [['A','PREPARED BY'],['E','MANAGER'],['G','AGM'],['I','GM']].forEach(([c,t]) => S3(c+rs, {t:'s', v:t, s:{font:{name:'Calibri',sz:12,underline:true}, alignment:{horizontal:'center'}}}));
-  ws3['!ref'] = 'A1:I' + rs; ws3['!merges'] = merges3; ws3['!cols'] = wid.map(w => ({wch:w}));
-  ws3['!rows'] = []; ws3['!rows'][r1-1] = {hpt:26};
+  ws3['!ref'] = 'A1:I' + rs; ws3['!merges'] = merges3; ws3['!cols'] = wid.map(w => ({width:w}));
+  ws3['!rows'] = []; ws3['!rows'][1] = {hpt:18.75}; ws3['!rows'][4] = {hpt:21};
+  for(let r = m0; r <= rTot; r++) ws3['!rows'][r-1] = {hpt:15.75};
+  ws3['!rows'][r1-1] = {hpt:26.1}; ws3['!rows'][r2-1] = {hpt:15.75}; ws3['!rows'][rs-1] = {hpt:15.75};
 
-  if(ctx) return {ws1, ws2, ws3};
+  if(ctx) return {ws1, ws2, ws3, sg};
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws1, 'Sheet1'); XLSX.utils.book_append_sheet(wb, ws2, 'CATEGORY'); XLSX.utils.book_append_sheet(wb, ws3, 'BATCHMC');
-  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}};
-  return {name:`ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-${u}).xlsx`, blob:aoaBlob(wb)};
+  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}, Names:[{Name:'_xlnm.Print_Area', Ref:'CATEGORY!$A$1:$J$' + sg, Sheet:1}], Views:[{activeTab:2}]};
+  const fname = `ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-${u}).xlsx`;
+  return finishActual(aoaBlob(wb), [{o:'landscape', fh0:true, zn:75}, {o:'portrait', fh0:true, zn:100, colBrk:true}, {o:'landscape', fh0:false, zn:100}], 2).then(blob => ({name:fname, blob}));
 }
 
 /* ---------- PNG helper: minimum column widths, coloured head, zebra rows ---------- */
@@ -2059,7 +2105,7 @@ function buildCategoryBothPng(){
 }
 /* ACTUAL file for Unit 1 + Unit 2 together: one Sheet1 with every row of the day (UNIT column added), then CATEGORY and BATCHMC
    for each unit (their formulas read the shared Sheet1 by machine range), and a TOTAL tab with U1 + U2 side by side. */
-function buildActualBothXlsx(){
+async function buildActualBothXlsx(){
   const us = [1,2].filter(u => summarize(reportRows(u), u).hasData);
   const all = us.flatMap(u => actualRows(u)), R = Math.max(300, all.length + 100);
   const parts = us.map(u => ({u, ...buildActualXlsx(u, {rows:all, R})}));
@@ -2074,8 +2120,10 @@ function buildActualBothXlsx(){
   [...d.body, d.foot].forEach((row,i) => row.forEach((v,c) => { const a = XLSX.utils.encode_cell({r:i+2,c}); const cell = ws[a] || (ws[a] = {t:'s',v:''}); cell.s = cellStyle(null,{b:1,sz:11}); }));
   ws['!cols'] = d.H.map((h,c) => ({wch: c===0 ? 12 : Math.max(9, h.length+2)}));
   XLSX.utils.book_append_sheet(wb, ws, 'TOTAL U1+2');
-  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}};
-  return {name:`ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-1+2).xlsx`, blob:aoaBlob(wb)};
+  wb.Workbook = {CalcPr:{fullCalcOnLoad:true}, Names: parts.map((p,i) => ({Name:'_xlnm.Print_Area', Ref:"'CATEGORY U" + p.u + "'!$A$1:$J$" + p.sg, Sheet:1 + 2*i}))};
+  const specs = [{o:'landscape', fh0:true, zn:75}]; parts.forEach(() => { specs.push({o:'portrait', fh0:true, zn:100, colBrk:true}); specs.push({o:'landscape', fh0:false, zn:100}); });
+  const blob = await finishActual(aoaBlob(wb), specs, null);
+  return {name:`ACTUAL FLOOR REPORT -${pad2(Dd)} ${MON3[Mo-1].toUpperCase()} ${String(Y).slice(2)} (U-1+2).xlsx`, blob};
 }
 
 /* REPROCESS report: R/M (R/M, RM, R.M, Rematch) and R/W (R/W, RW, R.W) batches, both units.
