@@ -100,3 +100,4 @@ The `#` of a row turns green when it is a production batch (has a batch number a
 - Reading a file now parses only Sheet1 / CATEGORY and skips formulas/HTML/number-format data (faster, less memory).
 - Background Google checks run at most once a minute and never overlap; saved days show instantly from a local copy, then refresh.
 - Combined file: the TOTAL U1+2 sheet is now scaled to one A4 page (was spilling onto an extra page). Combined file prints 7 pages, every page filled with a small safety margin.
+- **LOADING % excludes SAMPLE:** BATCHMC, the page, the combined TOTAL and the PNG now use (production − sample) ÷ capacity of the machines.

@@ -1519,7 +1519,7 @@ function summarize(rows, u){
   const denom = good.reduce((s,r) => s + (r.cap||0), 0);
   return {u, B, C, D, F, J, K: C+D+F+J, ok: C+D+F+J === B, Hauto, hasData: good.length > 0,
     machines, tot, other, target: TARGET_BATCH * machines.length,
-    avgBatch: machines.length ? tot.t / machines.length : 0, loading: denom ? B / denom * 100 : null, batches: good.length};
+    avgBatch: machines.length ? tot.t / machines.length : 0, loading: denom ? (B - J) / denom * 100 : null, batches: good.length};
 }
 const reportLabel = () => /^\d{4}-/.test(STATE.reportIso) ? labelOf(STATE.reportIso) : ((STATE.sources[0] && STATE.sources[0].date) || 'REPORT');
 const dayRowsOf = (u, iso) => STATE.parsed.filter(r => r.unit === u && r.iso === iso);
@@ -2012,7 +2012,7 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   S3('G'+r1, {t:'s', v: cfg.skip.length ? 'average is without mc ' + cfg.skip.join(',') : 'average of all machines', s:cellStyle(null,{b:1,sz:9,wrap:1})});
   S3('H'+r1, {t:'s', v:'', s:cellStyle(null,big)}); merges3.push({s:{r:r1-1,c:6},e:{r:r1-1,c:7}});
   S3('A'+r2, {t:'s', v:'LOADING % =', s:cellStyle(null,big)}); S3('B'+r2, {t:'s', v:'', s:cellStyle(null,big)}); merges3.push({s:{r:r2-1,c:0},e:{r:r2-1,c:1}});
-  S3('C'+r2, {...fcell(`C${r1}/SUMPRODUCT(--ISNUMBER(${rng('I')}),--ISNUMBER(${rng('B')}),--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),${rng('C')})%`, sm.loading ?? 0), z:'0.0', s:cellStyle(null,big)});
+  S3('C'+r2, {...fcell(`(C${r1}-G${rSmp})/SUMPRODUCT(--ISNUMBER(${rng('I')}),--ISNUMBER(${rng('B')}),--(${rng('B')}>=${cfg.lo}),--(${rng('B')}<=${cfg.hi}),${rng('C')})%`, sm.loading ?? 0), z:'0.0', s:cellStyle(null,big)});
   const rs = r2 + 4;
   [['A','PREPARED BY'],['E','MANAGER'],['G','AGM'],['I','GM']].forEach(([c,t]) => S3(c+rs, {t:'s', v:t, s:{font:{name:'Calibri',sz:12,underline:true}, alignment:{horizontal:'center'}}}));
   ws3['!ref'] = 'A1:I' + rs; ws3['!merges'] = merges3; ws3['!cols'] = wid.map(w => ({width:w}));
@@ -2082,10 +2082,10 @@ function categoryBothData(){
   const T = {B:0,C:0,D:0,F:0,J:0}; let den = 0, bt = 0, mn = 0;
   [1,2].forEach(u => { const sm = summarize(reportRows(u), u); if(!sm.hasData) return;
     ['B','C','D','F','J'].forEach(k => T[k] += sm[k]);
-    if(sm.loading) den += sm.B / sm.loading * 100; bt += sm.tot.t; mn += sm.machines.length;   // combined loading % and batch/MC from the same pieces
+    if(sm.loading) den += (sm.B - sm.J) / sm.loading * 100; bt += sm.tot.t; mn += sm.machines.length;   // combined loading % and batch/MC from the same pieces
     sms.push({u, sm});
     body.push([date, 'UNIT '+u, sm.B, sm.C, sm.D, pct(sm.D,sm.B,1), sm.F, pct(sm.F,sm.B,2), sm.J, sm.loading === null ? '' : sm.loading.toFixed(2)+'%', sm.avgBatch.toFixed(2)]); });
-  const foot = ['', 'TOTAL', T.B, T.C, T.D, pct(T.D,T.B,1), T.F, pct(T.F,T.B,2), T.J, den ? (T.B/den*100).toFixed(2)+'%' : '', mn ? (bt/mn).toFixed(2) : ''];
+  const foot = ['', 'TOTAL', T.B, T.C, T.D, pct(T.D,T.B,1), T.F, pct(T.F,T.B,2), T.J, den ? ((T.B-T.J)/den*100).toFixed(2)+'%' : '', mn ? (bt/mn).toFixed(2) : ''];
   const title = 'CATEGORY-WISE PRODUCTION REPORT (' + (/^\d{4}-/.test(STATE.reportIso) ? (+STATE.reportIso.slice(8)) + ' ' + MONTHS[+STATE.reportIso.slice(5,7)-1] + '- ' + STATE.reportIso.slice(0,4) : date) + ')';
   return {H, body, foot, title, date};
 }
