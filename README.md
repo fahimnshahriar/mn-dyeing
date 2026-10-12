@@ -95,3 +95,8 @@ The `#` of a row turns green when it is a production batch (has a batch number a
 ## Actual file: every page fills an A4 page (latest)
 - **Category sheets portrait, every other sheet landscape** (Sheet1, BATCHMC, TOTAL U1+2). Sheet1 may take 2 pages, every other sheet exactly 1.
 - Each sheet is scaled to the biggest size at which its print area still fits the A4 page (about 4 % spare), centred sideways. This is a fixed Excel scale worked out from the column widths and row heights, so the page is filled instead of only shrunk. Print areas are set on every sheet. Same for the single-unit actual files.
+
+## Speed & print notes (Oct 12)
+- Reading a file now parses only Sheet1 / CATEGORY and skips formulas/HTML/number-format data (faster, less memory).
+- Background Google checks run at most once a minute and never overlap; saved days show instantly from a local copy, then refresh.
+- Combined file: the TOTAL U1+2 sheet is now scaled to one A4 page (was spilling onto an extra page). Combined file prints 7 pages, every page filled with a small safety margin.

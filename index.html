@@ -743,11 +743,22 @@ function resetAll(){
 function showErr(msg){ errBox.innerHTML = msg; errBox.classList.add('show'); }
 function hideErr(){ errBox.classList.remove('show'); errBox.innerHTML=''; }
 
+/* Fast reading: the reader only needs the cell VALUES, so the library is told not to build the HTML of every cell, not to parse formulas
+   and not to format every number as text; and only Sheet1 / CATEGORY are parsed when the workbook has other sheets (BATCHMC, macros' helper sheets...). */
+function fastRead(u8){
+  const opt = {type:'array', cellHTML:false, cellFormula:false, cellText:false, cellNF:false};
+  try{
+    const names = XLSX.read(u8, {type:'array', bookSheets:true}).SheetNames || [];
+    const want = names.filter(n => /^(sheet1|category)$/i.test(String(n).trim()));
+    if(want.length && want.length < names.length) opt.sheets = want;
+  }catch(e){}
+  return XLSX.read(u8, opt);
+}
 function readFileAsWorkbook(file){
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = evt => {
-      try{ resolve({ok:true, workbook: XLSX.read(new Uint8Array(evt.target.result), {type:'array'}), fileName:file.name, buf:evt.target.result}); }
+      try{ resolve({ok:true, workbook: fastRead(new Uint8Array(evt.target.result)), fileName:file.name, buf:evt.target.result}); }
       catch(err){ resolve({ok:false, fileName:file.name, error:"couldn't read it as a spreadsheet (" + err.message + ")"}); }
     };
     reader.onerror = () => resolve({ok:false, fileName:file.name, error:"couldn't open the file"});
@@ -1759,7 +1770,8 @@ function sheetXmlOk(x){   // well formed AND parts in the order Excel demands; o
 /* size in points of the first nc columns x nr rows of a sheet object (from its column widths and row heights): used to scale a sheet so it FILLS an A4 page */
 function sheetPts(ws, nc, nr){
   let w = 0, h = 0;
-  for(let i = 0; i < nc; i++){ const c = (ws['!cols'] || [])[i], v = c ? (c.width ?? c.wch ?? 8.43) : 8.43; w += Math.trunc(v * 7 + 5) * 0.75; }
+  for(let i = 0; i < nc; i++){ const c = (ws['!cols'] || [])[i];   // 'width' is written to the file as is; 'wch' gets about 0.83 added by the library. 1 character = 7 px
+    const px = c && c.width != null ? c.width * 7 : (c && c.wch != null ? c.wch * 7 + 6 : 8.43 * 7 + 5); w += px * 0.75; }
   for(let i = 0; i < nr; i++){ const r = (ws['!rows'] || [])[i]; if(r && r.hidden) continue; h += (r && r.hpt) || 15; }
   return {w, h};
 }
@@ -1780,9 +1792,9 @@ async function finishActual(blob, specs, tabSheet){
       }
       const mg = sp.mg ? 'left="0.25" right="0.25"' : 'left="0.7" right="0.7"';   // Sheet1: narrow side margins
       let scaleAttr = '';
-      if(sp.w && sp.h){   // biggest scale at which the whole print area still fits the A4 page(s), 4 % spare so it never spills over
+      if(sp.w && sp.h){   // biggest scale at which the whole print area still fits the A4 page(s), 8 % spare, because LibreOffice / Excel / Google measure column widths a little differently; no sheet spills onto an extra page
         const pw = sp.o === 'landscape' ? 842 : 595, ph = sp.o === 'landscape' ? 595 : 842, L = sp.mg ? 0.25 : 0.7;
-        const sc = Math.max(20, Math.min(400, Math.floor(Math.min((pw - 2*L*72) / sp.w, (sp.pages || 1) * (ph - 1.5*72) / sp.h) * 96)));
+        const sc = Math.max(20, Math.min(400, Math.floor(Math.min((pw - 2*L*72) / sp.w, (sp.pages || 1) * (ph - 1.5*72) / sp.h) * 92)));
         scaleAttr = ' scale="' + sc + '"';
       }
       const pm = '<printOptions horizontalCentered="1"/><pageMargins ' + mg + ' top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9"' + scaleAttr + ' orientation="' + sp.o + '"/>'
@@ -2583,10 +2595,15 @@ async function gGet(params){
 }
 async function loadGoogleHist(){
   if(CAP.db || !GCFG().url) return;
-  STATE.histErr = 'Loading saved days from Google...'; renderHistory();
+  if(!STATE.histReady){   // the copy from the last visit shows at once, the fresh list replaces it when Google answers
+    try{ const c = JSON.parse(localStorage.getItem('frr_sums_cache') || 'null'); if(c && c.sums && c.sums.length){ const h0 = {}; c.sums.forEach(x => { h0[reprocKey(x.unit, x.iso)] = x; }); STATE.hist = h0; STATE.histReady = true; STATE.histErr = ''; } }catch(e){}
+  }
+  if(!STATE.histReady) STATE.histErr = 'Loading saved days from Google...';
+  renderHistory();
   try{
     const j = await gGet({action:'sums'}), h = {};
     (j.sums || []).forEach(x => { h[reprocKey(x.unit, x.iso)] = x; });
+    try{ localStorage.setItem('frr_sums_cache', JSON.stringify({sums: j.sums || []})); }catch(e){}
     STATE.hist = h; STATE.histReady = true; STATE.histErr = '';
   }catch(e){ console.error(e); STATE.histErr = 'Could not read saved days from Google: ' + (e && e.message || e) + '. Check that the Apps Script was redeployed as a New version.'; }
   if(dashboard.style.display !== 'none') renderFinal();
@@ -2891,7 +2908,13 @@ function applyBuyerConfig(custom, assign, fixes){
   applyAllRenames();
   if(dashboard.style.display !== 'none') render(aggregate());
 }
-async function loadBuyerConfig(){
+let cfgBusy = false, cfgLast = 0;
+async function loadBuyerConfig(){   // never two requests at once, and not more often than every 15 s (focus + tab-visible used to fire two at once)
+  if(cfgBusy || Date.now() - cfgLast < 15000) return;
+  cfgBusy = true;
+  try{ await loadBuyerConfigNow(); } finally{ cfgBusy = false; cfgLast = Date.now(); }
+}
+async function loadBuyerConfigNow(){
   const hasLocal = () => STATE.custom.added.length || Object.keys(STATE.custom.grp).length || Object.keys(STATE.custom.keys).length || Object.keys(STATE.custom.repl).length || STATE.custom.removed.length || Object.keys(STATE.custom.rename).length || Object.keys(STATE.assign).length || Object.keys(STATE.fixes).length;
   try{
     let c = null, a = null, fx = null, found = false;
@@ -2905,8 +2928,8 @@ async function loadBuyerConfig(){
     if(found){ const bs = $('bset'); if(bs && bs.style.display !== 'none') return; applyBuyerConfig(c, a, fx); }   // not while the Buyer list window is open
   }catch(e){ console.error(e); }
 }
-/* the buyer list syncs by itself: when the page opens, every 30 seconds, and whenever you come back to the tab */
-setInterval(() => { if(!document.hidden) loadBuyerConfig(); }, 30000);
+/* the buyer list syncs by itself: when the page opens, every minute, and whenever you come back to the tab */
+setInterval(() => { if(!document.hidden) loadBuyerConfig(); }, 60000);
 document.addEventListener('visibilitychange', () => { if(!document.hidden) loadBuyerConfig(); });
 window.addEventListener('focus', () => loadBuyerConfig());
 const kwList = s => String(s||'').split(',').map(x => x.trim()).filter(Boolean);
