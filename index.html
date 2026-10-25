@@ -473,6 +473,7 @@ table.entry-table td.x{background:rgba(201,106,78,.35) !important;font-weight:70
       <div class="act-row">
         <button class="btn small primary" id="actualBtn">Actual file · .xlsx</button>
         <button class="btn small primary" id="actualBothBtn">Actual file, Unit 1 + 2 combined · .xlsx</button>
+        <button class="btn small primary" id="printBothBtn">&#128424; Print: Actual file U1 + 2 (Sheet1 · Category · Batch/MC)</button>
         <button class="btn small primary" id="exportBtn">Final file · .xlsx</button>
         <button class="btn small" id="pngBtn">Buyer report · .png</button>
         <button class="btn small" id="catBothPngBtn">Category report, Unit 1 + 2 · .png</button>
@@ -1702,7 +1703,7 @@ function updateActions(){
   $('syncBtn').title = CAP.db ? 'Save every day of this main file to the online log, so others can open the earlier days' : 'The online log works on the published link.';
   $('saveDayBtn').title = CAP.db ? 'Save this day, both units, to the online history' : 'History is kept on the hosted page. Open the published link to use it.';
   [ 'actualBtn','exportBtn','pngBtn','pngMcBtn' ].forEach(id => $(id).disabled = !summarize(reportRows(u), u).hasData);
-  ['msgBtn','pngBothBtn','catBothPngBtn','actualBothBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
+  ['msgBtn','pngBothBtn','catBothPngBtn','actualBothBtn','printBothBtn'].forEach(id => $(id).disabled = ![1,2].some(k => summarize(reportRows(k), k).hasData));
   $('reprocBtn').disabled = !has.length || !/^\d{4}-/.test(STATE.reportIso);
 }
 
@@ -2358,6 +2359,77 @@ $('actualBothBtn').addEventListener('click', async () => {
   for(const u of [1,2]) if(summarize(reportRows(u), u).hasData && !(await exportGuard(u, true))) return;
   await bothRun(async () => buildActualBothXlsx())();
 });
+
+/* ---------- PRINT: the combined Actual file (Sheet1, CATEGORY U1/U2, BATCHMC U1/U2) straight to the printer, A4, every sheet scaled to fill its page ---------- */
+function wsToHtml(ws, nc, nr){
+  const col = (c) => { const k = (ws['!cols'] || [])[c]; return k && k.width != null ? k.width*7 : (k && k.wch != null ? k.wch*7+6 : 64); };
+  const mg = ws['!merges'] || [], skip = new Set(), span = {};
+  mg.forEach(m => { if(m.s.r >= nr || m.s.c >= nc) return; span[m.s.r+','+m.s.c] = {rs:Math.min(m.e.r,nr-1)-m.s.r+1, cs:Math.min(m.e.c,nc-1)-m.s.c+1};
+    for(let r = m.s.r; r <= Math.min(m.e.r,nr-1); r++) for(let c = m.s.c; c <= Math.min(m.e.c,nc-1); c++) if(r !== m.s.r || c !== m.s.c) skip.add(r+','+c); });
+  const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const show = x => { if(!x || x.v === undefined || x.v === null || x.v === '') return '';
+    if(typeof x.v === 'number'){ if(x.z){ try{ return XLSX.SSF.format(x.z, x.v); }catch(e){} } return String(Math.round(x.v*100)/100); }
+    return String(x.v); };
+  let h = '<table><colgroup>' + Array.from({length:nc}, (_, c) => '<col style="width:' + col(c) + 'px">').join('') + '</colgroup>';
+  for(let r = 0; r < nr; r++){
+    const rw = (ws['!rows'] || [])[r], ht = ((rw && rw.hpt) || 15) / 0.75;
+    h += (r === 3 && nc === 15 ? '' : '') + '<tr style="height:' + ht + 'px">';
+    for(let c = 0; c < nc; c++){
+      if(skip.has(r+','+c)) continue;
+      const x = ws[XLSX.utils.encode_cell({r,c})], st = (x && x.s) || {}, f = st.font || {}, al = st.alignment || {}, sp = span[r+','+c];
+      const css = [];
+      if(st.fill && st.fill.fgColor) css.push('background:#' + String(st.fill.fgColor.rgb).slice(-6));
+      if(f.color && f.color.rgb) css.push('color:#' + String(f.color.rgb).slice(-6));
+      if(f.bold) css.push('font-weight:700'); if(f.underline) css.push('text-decoration:underline');
+      css.push('font-size:' + ((f.sz || 11) / 0.75) + 'px');
+      css.push('text-align:' + (al.horizontal === 'left' ? 'left' : al.horizontal === 'right' ? 'right' : 'center'));
+      if(!al.wrapText) css.push('white-space:nowrap');
+      if(st.border) css.push('border:1px solid #000');
+      h += '<td' + (sp ? ' rowspan="' + sp.rs + '" colspan="' + sp.cs + '"' : '') + ' style="' + css.join(';') + '">' + esc(show(x)) + '</td>';
+    }
+    h += '</tr>';
+  }
+  return h + '</table>';
+}
+async function printActualBoth(){
+  const us = [1,2].filter(u => summarize(reportRows(u), u).hasData);
+  const all = us.flatMap(u => actualRows(u)), R = Math.max(300, all.length + 100);
+  const parts = us.map(u => ({u, ...buildActualXlsx(u, {rows:all, R})}));
+  const secs = [{h:wsToHtml(parts[0].ws1, 15, parts[0].last1), o:'land', pages:2, nm:'Sheet1'}];
+  parts.forEach(p => secs.push({h:wsToHtml(p.ws2, 10, p.sg), o:'port', pages:1, nm:'CATEGORY U' + p.u}));
+  parts.forEach(p => secs.push({h:wsToHtml(p.ws3, 9, p.rs), o:'land', pages:1, nm:'BATCHMC U' + p.u}));
+  const doc = '<!doctype html><html><head><meta charset="utf-8"><title>ACTUAL FLOOR REPORT ' + fileDate() + '</title><style>' +
+    '@page land{size:A4 landscape;margin:0.4in}@page port{size:A4 portrait;margin:0.4in}' +
+    'body{margin:0;font-family:Calibri,Carlito,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    '.sh{break-after:page;overflow:hidden}.sh.land{page:land}.sh.port{page:port}.sh:last-child{break-after:auto}' +
+    'table{border-collapse:collapse;table-layout:fixed}td{padding:0 2px;overflow:hidden;line-height:1.15}' +
+    '</style></head><body>' + secs.map((x, i) => '<div class="sh ' + x.o + '" data-pages="' + x.pages + '"><div class="z">' + x.h + '</div></div>').join('') + '</body></html>';
+  const fr = document.createElement('iframe');
+  fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  document.body.appendChild(fr);
+  const d = fr.contentWindow.document; d.open(); d.write(doc); d.close();
+  await new Promise(r => setTimeout(r, 150));
+  /* scale each sheet so it fills its A4 page(s): usable area = page minus 0.4 in margins, at 96 px per inch */
+  d.querySelectorAll('.sh').forEach(sh => {
+    const land = sh.classList.contains('land'), pg = +sh.dataset.pages, z = sh.firstChild, t = z.firstChild;
+    const aw = (land ? 11.69 : 8.27) * 96 - 0.8*96, ah = (land ? 8.27 : 11.69) * 96 - 0.8*96;
+    const sc = Math.min(aw / t.offsetWidth, pg * ah / t.offsetHeight) * 0.93;
+    z.style.zoom = String(Math.max(0.2, Math.min(4, sc)));
+  });
+  await new Promise(r => setTimeout(r, 100));
+  const done = () => setTimeout(() => fr.remove(), 500);
+  fr.contentWindow.addEventListener('afterprint', done);
+  fr.contentWindow.focus(); fr.contentWindow.print();
+  setTimeout(() => { if(fr.isConnected) fr.remove(); }, 10 * 60 * 1000);
+}
+$('printBothBtn').addEventListener('click', async () => {
+  if(busy) return; aggregate();
+  for(const u of [1,2]) if(summarize(reportRows(u), u).hasData && !(await exportGuard(u, true))) return;
+  busy = true;
+  try{ await printActualBoth(); }
+  catch(e){ console.error(e); toast('Print failed: ' + (e && e.message || e), 'err'); }
+  finally{ busy = false; }
+});
 $('reprocBtn').addEventListener('click', bothRun(async () => buildReprocessXlsx()));
 $('pngBothBtn').addEventListener('click', async () => {
   if(busy) return; busy = true;
@@ -2908,7 +2980,7 @@ function applyBuyerConfig(custom, assign, fixes){
   applyAllRenames();
   if(dashboard.style.display !== 'none') render(aggregate());
 }
-let cfgBusy = false, cfgLast = 0;
+var cfgBusy = false, cfgLast = 0;
 async function loadBuyerConfig(){   // never two requests at once, and not more often than every 15 s (focus + tab-visible used to fire two at once)
   if(cfgBusy || Date.now() - cfgLast < 15000) return;
   cfgBusy = true;
