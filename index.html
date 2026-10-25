@@ -2361,59 +2361,94 @@ $('actualBothBtn').addEventListener('click', async () => {
 });
 
 /* ---------- PRINT: the combined Actual file (Sheet1, CATEGORY U1/U2, BATCHMC U1/U2) straight to the printer, A4, every sheet scaled to fill its page ---------- */
-function wsToHtml(ws, nc, nr){
+const PRINT_THEME = {   // excel fill -> [background, text, bold, border]: light greys, little ink
+  '000080':['#E2E2E2','#000',1,'#9A9A9A'], 'D9E2F3':['#EEEEEE','#000',1,'#9A9A9A'], 'A9D08E':['#E2E2E2','#000',1,'#9A9A9A'],
+  'BDD7EE':['#E8E8E8','#000',1,'#9A9A9A'], 'E7E6E6':['#E2E2E2','#000',1,'#9A9A9A'], '87CEEB':['#F5F5F5','#000',0,'#BDBDBD'],
+  'C6E0B4':['#EEEEEE','#000',1,'#BDBDBD'], 'FFFF00':['#EEEEEE','#000',1,'#BDBDBD']};
+function wsToHtml(ws, nc, nr, idx){
   const col = (c) => { const k = (ws['!cols'] || [])[c]; return k && k.width != null ? k.width*7 : (k && k.wch != null ? k.wch*7+6 : 64); };
   const mg = ws['!merges'] || [], skip = new Set(), span = {};
   mg.forEach(m => { if(m.s.r >= nr || m.s.c >= nc) return; span[m.s.r+','+m.s.c] = {rs:Math.min(m.e.r,nr-1)-m.s.r+1, cs:Math.min(m.e.c,nc-1)-m.s.c+1};
     for(let r = m.s.r; r <= Math.min(m.e.r,nr-1); r++) for(let c = m.s.c; c <= Math.min(m.e.c,nc-1); c++) if(r !== m.s.r || c !== m.s.c) skip.add(r+','+c); });
   const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const show = x => { if(!x || x.v === undefined || x.v === null || x.v === '') return '';
-    if(typeof x.v === 'number'){ if(x.z){ try{ return XLSX.SSF.format(x.z, x.v); }catch(e){} } return String(Math.round(x.v*100)/100); }
+    if(typeof x.v === 'number'){ if(x.z && /h:mm/.test(x.z)){ const m = Math.round((x.v % 1) * 1440), hh = Math.floor(m / 60) % 24; return (hh % 12 || 12) + ':' + String(m % 60).padStart(2,'0') + ' ' + (hh < 12 ? 'AM' : 'PM'); }
+    if(x.z){ try{ return XLSX.SSF.format(x.z, x.v); }catch(e){} } return String(Math.round(x.v*100)/100); }
     return String(x.v); };
   let h = '<table><colgroup>' + Array.from({length:nc}, (_, c) => '<col style="width:' + col(c) + 'px">').join('') + '</colgroup>';
-  for(let r = 0; r < nr; r++){
+  for(const r of (idx || Array.from({length:nr}, (_, k) => k))){
     const rw = (ws['!rows'] || [])[r], ht = ((rw && rw.hpt) || 15) / 0.75;
     h += (r === 3 && nc === 15 ? '' : '') + '<tr style="height:' + ht + 'px">';
     for(let c = 0; c < nc; c++){
       if(skip.has(r+','+c)) continue;
       const x = ws[XLSX.utils.encode_cell({r,c})], st = (x && x.s) || {}, f = st.font || {}, al = st.alignment || {}, sp = span[r+','+c];
-      const css = [];
-      if(st.fill && st.fill.fgColor) css.push('background:#' + String(st.fill.fgColor.rgb).slice(-6));
-      if(f.color && f.color.rgb) css.push('color:#' + String(f.color.rgb).slice(-6));
-      if(f.bold) css.push('font-weight:700'); if(f.underline) css.push('text-decoration:underline');
+      const css = [], fill = st.fill && st.fill.fgColor ? String(st.fill.fgColor.rgb).slice(-6).toUpperCase() : '';
+      const th = PRINT_THEME[fill];   // Excel colours -> a calmer, print-friendly palette
+      if(th) css.push('background:' + th[0], 'color:' + th[1]); else if(fill) css.push('background:#' + fill);
+      if(!th && f.color && f.color.rgb && String(f.color.rgb).slice(-6) !== '000000') css.push('color:#' + String(f.color.rgb).slice(-6));
+      if(f.bold || (th && th[2])) css.push('font-weight:700'); if(f.underline) css.push('text-decoration:underline');
       css.push('font-size:' + ((f.sz || 11) / 0.75) + 'px');
       css.push('text-align:' + (al.horizontal === 'left' ? 'left' : al.horizontal === 'right' ? 'right' : 'center'));
       if(!al.wrapText) css.push('white-space:nowrap');
-      if(st.border) css.push('border:1px solid #000');
+      if(st.border) css.push('border:0.6px solid ' + (th && th[3] ? th[3] : '#8A8A8A'));
       h += '<td' + (sp ? ' rowspan="' + sp.rs + '" colspan="' + sp.cs + '"' : '') + ' style="' + css.join(';') + '">' + esc(show(x)) + '</td>';
     }
     h += '</tr>';
   }
   return h + '</table>';
 }
+function reprocPrintHtml(){
+  const iso = STATE.reportIso, rows = [];
+  [1,2].forEach(u => reprocessRowsOf(u, iso).forEach(r => rows.push({u, r})));
+  const H = ['DATE','UNIT','MC','BUYER','COLOR','BATCH NO','FABRIC','QTY (KG)','LOAD TIME','UNLOAD TIME','DURATION','RFT','CAUSE'];
+  const esc = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let h = '<table class="rp"><thead><tr>' + H.map(x => '<th>' + x + '</th>').join('') + '</tr></thead><tbody>';
+  if(!rows.length) h += '<tr class="none"><td colspan="' + H.length + '">No R/M or R/W batch on this day.</td></tr>';
+  rows.forEach(({u, r}, i) => { h += '<tr' + (i % 2 ? ' class="z"' : '') + '>' + [labelOf(iso), 'UNIT ' + u, r.mc, r.buyer, r.color, r.batch, r.fabric, r.qty != null ? n0(r.qty) : '', r.loadTime, r.unloadTime, r.duration, r.rft, ''].map((v, c) => '<td' + ([3,4,6].includes(c) ? ' class="l"' : '') + '>' + esc(v) + '</td>').join('') + '</tr>'; });
+  const kg = rows.reduce((t, x) => t + (x.r.qty || 0), 0);
+  h += '<tr class="t"><td colspan="7">TOTAL &middot; ' + rows.length + ' batch' + (rows.length === 1 ? '' : 'es') + ' (R/M + R/W)</td><td>' + n0(kg) + '</td><td colspan="5"></td></tr></tbody></table>';
+  return h;
+}
 async function printActualBoth(){
   const us = [1,2].filter(u => summarize(reportRows(u), u).hasData);
   const all = us.flatMap(u => actualRows(u)), R = Math.max(300, all.length + 100);
   const parts = us.map(u => ({u, ...buildActualXlsx(u, {rows:all, R})}));
-  const secs = [{h:wsToHtml(parts[0].ws1, 15, parts[0].last1), o:'land', pages:2, nm:'Sheet1'}];
-  parts.forEach(p => secs.push({h:wsToHtml(p.ws2, 10, p.sg), o:'port', pages:1, nm:'CATEGORY U' + p.u}));
-  parts.forEach(p => secs.push({h:wsToHtml(p.ws3, 9, p.rs), o:'land', pages:1, nm:'BATCHMC U' + p.u}));
+  /* Sheet1 print: column widths in characters, short headings (black & white friendly) */
+  const w1 = parts[0].ws1, PW = [11,3,7,15,11,16,14,11,7,8,8,11,5,10,6];   // date, MC 2 digits, cap 6, buyer 14, order 10, batch 15, colour, fabric 10, qty 6, load, unload, duration, rft, category, shade
+  w1['!cols'] = PW.map(n => ({width: n + 1.4}));
+  ['DATE','MC','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','LOAD','UNLOAD','DURATION','RFT','CATEGORY','SHADE'].forEach((t, c) => { const x = w1[XLSX.utils.encode_cell({r:2,c})]; if(x) x.v = t; });
+  w1['!rows'] = []; for(let r = 3; r < parts[0].last1; r++) w1['!rows'][r] = {hpt:14};
+  const n1 = parts[0].last1, body1 = Array.from({length:n1 - 3}, (_, k) => k + 3), two = body1.length > 44, cut = Math.ceil(body1.length / 2);
+  const secs = two ? [{h:wsToHtml(w1, 15, n1, [0,1,2,...body1.slice(0, cut)]), o:'land', nm:'Sheet1 (1/2)', c:'s1'}, {h:wsToHtml(w1, 15, n1, [0,1,2,...body1.slice(cut)]), o:'land', nm:'Sheet1 (2/2)', c:'s1'}]
+    : [{h:wsToHtml(w1, 15, n1), o:'land', nm:'Sheet1', c:'s1'}];
+  parts.forEach(p => secs.push({h:wsToHtml(p.ws2, 10, p.sg), o:'port', nm:'CATEGORY U' + p.u}));
+  parts.forEach(p => secs.push({h:wsToHtml(p.ws3, 9, p.rs), o:'land', nm:'BATCHMC U' + p.u}));
+  secs.push({h:reprocPrintHtml(), o:'land', nm:'REPROCESS'});
+  /* margin 0 on the page = the browser prints no date / address / page-number lines; the 0.35 in border is made by the sheet itself, one sheet = exactly one page */
   const doc = '<!doctype html><html><head><meta charset="utf-8"><title>ACTUAL FLOOR REPORT ' + fileDate() + '</title><style>' +
-    '@page land{size:A4 landscape;margin:0.4in}@page port{size:A4 portrait;margin:0.4in}' +
-    'body{margin:0;font-family:Calibri,Carlito,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
-    '.sh{break-after:page;overflow:hidden}.sh.land{page:land}.sh.port{page:port}.sh:last-child{break-after:auto}' +
+    '@page land{size:A4 landscape;margin:0}@page port{size:A4 portrait;margin:0}' +
+    'html,body{margin:0;padding:0}body{font-family:Calibri,Carlito,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact;color:#000}' +
+    '.sh{box-sizing:border-box;padding:0.35in;overflow:hidden;break-after:page}.sh.land{page:land;width:11.69in;height:8.26in}.sh.port{page:port;width:8.27in;height:11.68in}.sh:last-child{break-after:auto}' +
+    '.bar{display:flex;justify-content:space-between;align-items:baseline;padding:2px 1px 4px;border-bottom:1px solid #777;margin-bottom:6px}.bar b{font-size:15px;letter-spacing:.4px}.bar span{font-size:11px;color:#333}' +
+    '.foot{margin-top:5px;font-size:9px;color:#555;text-align:right}' +
+    '.rp td,.rp th{border:0.6px solid #9A9A9A;padding:2px 5px;font-size:12px;text-align:center;white-space:nowrap}.rp th{background:#E2E2E2;font-weight:700}.rp tr.z td{background:#F5F5F5}.rp tr.t td{background:#E8E8E8;font-weight:700}.rp td.l{text-align:left}.rp .none td{padding:14px;color:#444;font-style:italic}' +
+    '.s1 td:first-child{font-size:10.5px !important;letter-spacing:-.15px;padding:0 1px}' +
     'table{border-collapse:collapse;table-layout:fixed}td{padding:0 2px;overflow:hidden;line-height:1.15}' +
-    '</style></head><body>' + secs.map((x, i) => '<div class="sh ' + x.o + '" data-pages="' + x.pages + '"><div class="z">' + x.h + '</div></div>').join('') + '</body></html>';
+    '</style></head><body>' + secs.map(x => '<div class="sh ' + x.o + '"><div class="z ' + (x.c || '') + '"><div class="bar"><b>M.N. DYEING, PRINTING &amp; WASHING MILLS LTD.</b><span>ACTUAL FLOOR REPORT &middot; ' + x.nm + ' &middot; ' + labelOf(STATE.reportIso) + '</span></div>' + x.h + '<div class="foot">Printed ' + new Date().toLocaleString() + '</div></div></div>').join('') + '</body></html>';
   const fr = document.createElement('iframe');
   fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
   document.body.appendChild(fr);
   const d = fr.contentWindow.document; d.open(); d.write(doc); d.close();
   await new Promise(r => setTimeout(r, 150));
-  /* scale each sheet so it fills its A4 page(s): usable area = page minus 0.4 in margins, at 96 px per inch */
+  /* every sheet: scaled to the full page width, then its rows are stretched so the table also fills the page height (a tall page is never left half empty) */
   d.querySelectorAll('.sh').forEach(sh => {
-    const land = sh.classList.contains('land'), pg = +sh.dataset.pages, z = sh.firstChild, t = z.firstChild;
-    const aw = (land ? 11.69 : 8.27) * 96 - 0.8*96, ah = (land ? 8.27 : 11.69) * 96 - 0.8*96;
-    const sc = Math.min(aw / t.offsetWidth, pg * ah / t.offsetHeight) * 0.93;
+    const land = sh.classList.contains('land'), z = sh.firstChild, t = z.querySelector('table');
+    const aw = (land ? 11.69 : 8.27) * 96 - 0.7*96, ah = (land ? 8.26 : 11.68) * 96 - 0.7*96;
+    const other = z.offsetHeight - t.offsetHeight, tw = t.offsetWidth, th = t.offsetHeight;
+    let sc = aw / tw, f = 1;
+    if(sc * (other + th) > ah * 0.97){ sc = ah * 0.97 / (other + th); t.style.width = Math.floor(aw / sc) + 'px'; }   // tall table: height decides, the columns are widened to use the full page width
+    else f = Math.min(2.4, (ah * 0.97 / sc - other) / th);              // short table: stretch the rows
+    if(f > 1) t.querySelectorAll('tr').forEach(tr => { tr.style.height = (tr.offsetHeight * f) + 'px'; });
     z.style.zoom = String(Math.max(0.2, Math.min(4, sc)));
   });
   await new Promise(r => setTimeout(r, 100));
