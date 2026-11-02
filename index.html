@@ -2182,27 +2182,34 @@ async function buildReprocessXlsx(){
         list.push({iso, u, r:{mc:'', buyer:'MONTH REPORT FIGURE (' + (SRC_LABEL[fg.src] || fg.src) + ')', color:'', batch:'', fabric:'no batch lines', qty:fg.H, loadTime:'', unloadTime:'', duration:'', rft:'R/M'}});
         row.kg[u] = fg.H; } });
     byDay.push(row); }
-  /* nothing on the report day: still make the file (month overview on BY DAY) with one clear line, instead of stopping with an error */
-  if(!list.some(x => x.iso === iso0)) list.push({iso:iso0, u:STATE.unit || 1, r:{mc:'', buyer:'NO R/M OR R/W BATCH ON THIS DAY', color:'', batch:'', fabric:'', qty:0, loadTime:'', unloadTime:'', duration:'', rft:''}});
   const H = ['DATE','UNIT','MC','BUYER','COLOR','BATCH NO','FABRIC','QTY (KG)','LOAD TIME','UNLOAD TIME','DURATION','RFT','CAUSE'];
-  const aoa = [['REPROCESS (R/M + R/W) BATCHES - ' + MONTHS[m-1] + ' ' + y + ' (up to ' + labelOf(iso0) + ')'], H,
-    ...list.map(({iso, u, r}) => [labelOf(iso), 'UNIT ' + u, /^\d+$/.test(String(r.mc).trim()) ? +r.mc : r.mc, r.buyer||'', r.color||'', r.batch||'', r.fabric||'', r.qty ?? '', r.loadTime||'', r.unloadTime||'', r.duration||'', r.rft||'', ''])];
-  const first = 3, lastData = 2 + list.length, totRow = lastData + 1;
-  const dayKg = list.filter(x => x.iso === iso0).reduce((t,x) => t + (x.r.qty||0), 0);
-  aoa.push(['TOTAL','','','','','','', '', '','','','','']);
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
   const hs = cellStyle('D9E2F3',{b:1,sz:10,wrap:1}), ds = cellStyle(null,{sz:11}), dw = cellStyle(null,{sz:11,wrap:1}), ts = cellStyle('D9D9D9',{b:1,sz:11});
-  const at = (r,c) => XLSX.utils.encode_cell({r,c}), cell = (r,c) => ws[at(r,c)] || (ws[at(r,c)] = {t:'s',v:''});
-  for(let c=0;c<12;c++) cell(0,c).s = cellStyle('A9D08E',{b:1,sz:12});
-  ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:11}}];
-  H.forEach((h,c) => cell(1,c).s = hs);
-  for(let r=2; r<=lastData-0; r++) H.forEach((h,c) => { const x = cell(r,c); x.s = c === 6 ? dw : ds; });
-  H.forEach((h,c) => cell(totRow-1,c).s = ts);
-  ws[at(totRow-1,7)] = {t:'n', f:'SUBTOTAL(109,H' + first + ':H' + lastData + ')', v:dayKg, s:ts};   // follows the filter: total of the day that is showing
-  ws['!cols'] = [10.4,8.9,7.9,15.1,18.3,12.9,14.7,8.3,11.9,11.9,10.9,8.9,14].map(w => ({wch:w}));
-  ws['!rows'] = []; ws['!rows'][0] = {hpt:15.75}; ws['!rows'][1] = {hpt:25.5};
-  ws['!ref'] = 'A1:M' + totRow; ws['!autofilter'] = {ref:'A2:M' + lastData};
-  const hidden = new Set(); list.forEach((x,i) => { if(x.iso !== iso0) hidden.add(3 + i); });   // 1-based sheet rows
+  /* one sheet per unit (same layout for both): every day of the month, an Excel filter on DATE = the report day */
+  const unitSheet = u => {
+    const lst = list.filter(x => x.u === u);
+    /* nothing on the report day: still make the sheet, with one clear line */
+    if(!lst.some(x => x.iso === iso0)) lst.push({iso:iso0, u, r:{mc:'', buyer:'NO R/M OR R/W BATCH ON THIS DAY', color:'', batch:'', fabric:'', qty:0, loadTime:'', unloadTime:'', duration:'', rft:''}});
+    lst.sort((p, q) => p.iso < q.iso ? -1 : p.iso > q.iso ? 1 : 0);
+    const aoa = [['REPROCESS (R/M + R/W) BATCHES - UNIT ' + u + ' - ' + MONTHS[m-1] + ' ' + y + ' (up to ' + labelOf(iso0) + ')'], H,
+      ...lst.map(({iso, r}) => [labelOf(iso), 'UNIT ' + u, /^\d+$/.test(String(r.mc).trim()) ? +r.mc : r.mc, r.buyer||'', r.color||'', r.batch||'', r.fabric||'', r.qty ?? '', r.loadTime||'', r.unloadTime||'', r.duration||'', r.rft||'', ''])];
+    const first = 3, lastData = 2 + lst.length, totRow = lastData + 1;
+    const dayKg = lst.filter(x => x.iso === iso0).reduce((t,x) => t + (x.r.qty||0), 0);
+    aoa.push(['TOTAL','','','','','','', '', '','','','','']);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const at = (r,c) => XLSX.utils.encode_cell({r,c}), cell = (r,c) => ws[at(r,c)] || (ws[at(r,c)] = {t:'s',v:''});
+    for(let c=0;c<12;c++) cell(0,c).s = cellStyle('A9D08E',{b:1,sz:12});
+    ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:11}}];
+    H.forEach((h,c) => cell(1,c).s = hs);
+    for(let r=2; r<=lastData; r++) H.forEach((h,c) => { const x = cell(r,c); x.s = c === 6 ? dw : ds; });
+    H.forEach((h,c) => cell(totRow-1,c).s = ts);
+    ws[at(totRow-1,7)] = {t:'n', f:'SUBTOTAL(109,H' + first + ':H' + lastData + ')', v:dayKg, s:ts};   // follows the filter: total of the day that is showing
+    ws['!cols'] = [10.4,8.9,7.9,15.1,18.3,12.9,14.7,8.3,11.9,11.9,10.9,8.9,14].map(w => ({wch:w}));
+    ws['!rows'] = []; ws['!rows'][0] = {hpt:15.75}; ws['!rows'][1] = {hpt:25.5};
+    ws['!ref'] = 'A1:M' + totRow; ws['!autofilter'] = {ref:'A2:M' + lastData};
+    const hidden = new Set(); lst.forEach((x,i) => { if(x.iso !== iso0) hidden.add(3 + i); });   // 1-based sheet rows
+    return {ws, lastData, hidden};
+  };
+  const U1 = unitSheet(1), U2 = unitSheet(2);
   const b2 = [['REPROCESS kg BY DAY - ' + MONTHS[m-1] + ' ' + y], ['DATE','UNIT 1 BATCHES','UNIT 1 KG','UNIT 2 BATCHES','UNIT 2 KG','TOTAL KG','MONTH REPORT SHOWS (U1 + U2)'],
     ...byDay.map(x => [labelOf(x.iso), x.cnt[1], x.kg[1], x.cnt[2], x.kg[2], x.kg[1] + x.kg[2], (x.shown[1] === null && x.shown[2] === null) ? '' : (x.shown[1]||0) + (x.shown[2]||0)])];
   const S = f => byDay.reduce((t,x) => t + f(x), 0);
@@ -2210,7 +2217,7 @@ async function buildReprocessXlsx(){
   const w2 = XLSX.utils.aoa_to_sheet(b2), c2 = (r,c) => w2[XLSX.utils.encode_cell({r,c})] || (w2[XLSX.utils.encode_cell({r,c})] = {t:'s',v:''}), tr = byDay.length + 2;
   for(let c=0;c<7;c++){ c2(0,c).s = cellStyle('A9D08E',{b:1,sz:12}); c2(1,c).s = hs; for(let r=2;r<tr;r++) c2(r,c).s = ds; c2(tr,c).s = ts; }
   w2['!merges'] = [{s:{r:0,c:0},e:{r:0,c:6}}]; w2['!cols'] = [12.9,14.9,12.9,14.9,12.9,12,24.9].map(w => ({wch:w}));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'REPROCESS'); XLSX.utils.book_append_sheet(wb, w2, 'BY DAY');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, U1.ws, 'REPROCESS U1'); XLSX.utils.book_append_sheet(wb, U2.ws, 'REPROCESS U2'); XLSX.utils.book_append_sheet(wb, w2, 'BY DAY');
   let blob = aoaBlob(wb);
   // real Excel filter on DATE = the report day (rows of the other days hidden, filter button shows the active filter),
   // and landscape + every column on one page wide for printing
@@ -2228,14 +2235,17 @@ async function buildReprocessXlsx(){
       else x = x.replace('</worksheet>', () => pm + '</worksheet>');
       return x;
     };
-    const n1 = 'xl/worksheets/sheet1.xml', n2 = 'xl/worksheets/sheet2.xml';
-    let x = await zip.file(n1).async('string');
-    x = x.replace(/<row r="(\d+)"/g, (a, r) => hidden.has(+r) ? '<row r="' + r + '" hidden="1"' : a);
-    const af = '<autoFilter ref="A2:M' + lastData + '"><filterColumn colId="0"><filters><filter val="' + labelOf(iso0) + '"/></filters></filterColumn></autoFilter>';
-    if(/<autoFilter[^>]*\/>/.test(x)) x = x.replace(/<autoFilter[^>]*\/>/, af);
-    else if(x.includes('<mergeCells')) x = x.replace('<mergeCells', af + '<mergeCells'); else x = x.replace('</worksheet>', af + '</worksheet>');
-    zip.file(n1, page(x, true));
-    if(zip.file(n2)) zip.file(n2, page(await zip.file(n2).async('string'), false));
+    for(const [k, U] of [[1, U1], [2, U2]]){
+      const nm = 'xl/worksheets/sheet' + k + '.xml';
+      let x = await zip.file(nm).async('string');
+      x = x.replace(/<row r="(\d+)"/g, (a, r) => U.hidden.has(+r) ? '<row r="' + r + '" hidden="1"' : a);
+      const af = '<autoFilter ref="A2:M' + U.lastData + '"><filterColumn colId="0"><filters><filter val="' + labelOf(iso0) + '"/></filters></filterColumn></autoFilter>';
+      if(/<autoFilter[^>]*\/>/.test(x)) x = x.replace(/<autoFilter[^>]*\/>/, af);
+      else if(x.includes('<mergeCells')) x = x.replace('<mergeCells', af + '<mergeCells'); else x = x.replace('</worksheet>', af + '</worksheet>');
+      zip.file(nm, page(x, true));
+    }
+    const n3 = 'xl/worksheets/sheet3.xml';
+    if(zip.file(n3)) zip.file(n3, page(await zip.file(n3).async('string'), false));
     blob = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   }catch(e){ console.error('reprocess filter / page setup not applied', e); }
   return {name:'REPROCESS REPORT - ' + fileDate() + ' (UNIT-1+2).xlsx', blob};
@@ -2397,9 +2407,9 @@ function wsToHtml(ws, nc, nr, idx){
   }
   return h + '</table>';
 }
-function reprocPrintHtml(){
+function reprocPrintHtml(unit){
   const iso = STATE.reportIso, rows = [];
-  [1,2].forEach(u => reprocessRowsOf(u, iso).forEach(r => rows.push({u, r})));
+  [unit].forEach(u => reprocessRowsOf(u, iso).forEach(r => rows.push({u, r})));
   const H = ['DATE','UNIT','MC','BUYER','COLOR','BATCH NO','FABRIC','QTY (KG)','LOAD TIME','UNLOAD TIME','DURATION','RFT','CAUSE'];
   const esc = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let h = '<table class="rp"><thead><tr>' + H.map(x => '<th>' + x + '</th>').join('') + '</tr></thead><tbody>';
@@ -2414,16 +2424,17 @@ async function printActualBoth(){
   const all = us.flatMap(u => actualRows(u)), R = Math.max(300, all.length + 100);
   const parts = us.map(u => ({u, ...buildActualXlsx(u, {rows:all, R})}));
   /* Sheet1 print: column widths in characters, short headings (black & white friendly) */
-  const w1 = parts[0].ws1, PW = [11,3,7,15,11,16,14,11,7,8,8,11,5,10,6];   // date, MC 2 digits, cap 6, buyer 14, order 10, batch 15, colour, fabric 10, qty 6, load, unload, duration, rft, category, shade
+  const w1 = parts[0].ws1, PW = [8.2,3,7,15,11,16,14,11,7,8,8,11,5,10,6];   // date, MC 2 digits, cap 6, buyer 14, order 10, batch 15, colour, fabric 10, qty 6, load, unload, duration, rft, category, shade
   w1['!cols'] = PW.map(n => ({width: n + 1.4}));
   ['DATE','MC','CAP','BUYER','ORDER','BATCH NO','COLOR','FABRIC','QTY','LOAD','UNLOAD','DURATION','RFT','CATEGORY','SHADE'].forEach((t, c) => { const x = w1[XLSX.utils.encode_cell({r:2,c})]; if(x) x.v = t; });
+  if(w1['A1']) w1['A1'].v = '';   // the page header already carries the title
   w1['!rows'] = []; for(let r = 3; r < parts[0].last1; r++) w1['!rows'][r] = {hpt:14};
   const n1 = parts[0].last1, body1 = Array.from({length:n1 - 3}, (_, k) => k + 3), two = body1.length > 44, cut = Math.ceil(body1.length / 2);
   const secs = two ? [{h:wsToHtml(w1, 15, n1, [0,1,2,...body1.slice(0, cut)]), o:'land', nm:'Sheet1 (1/2)', c:'s1'}, {h:wsToHtml(w1, 15, n1, [0,1,2,...body1.slice(cut)]), o:'land', nm:'Sheet1 (2/2)', c:'s1'}]
     : [{h:wsToHtml(w1, 15, n1), o:'land', nm:'Sheet1', c:'s1'}];
   parts.forEach(p => secs.push({h:wsToHtml(p.ws2, 10, p.sg), o:'port', nm:'CATEGORY U' + p.u}));
   parts.forEach(p => secs.push({h:wsToHtml(p.ws3, 9, p.rs), o:'land', nm:'BATCHMC U' + p.u}));
-  secs.push({h:reprocPrintHtml(), o:'land', nm:'REPROCESS'});
+  [1,2].forEach(u => secs.push({h:reprocPrintHtml(u), o:'land', nm:'REPROCESS U' + u}));
   /* margin 0 on the page = the browser prints no date / address / page-number lines; the 0.35 in border is made by the sheet itself, one sheet = exactly one page */
   const doc = '<!doctype html><html><head><meta charset="utf-8"><title>ACTUAL FLOOR REPORT ' + fileDate() + '</title><style>' +
     '@page land{size:A4 landscape;margin:0}@page port{size:A4 portrait;margin:0}' +
@@ -2432,7 +2443,7 @@ async function printActualBoth(){
     '.bar{display:flex;justify-content:space-between;align-items:baseline;padding:2px 1px 4px;border-bottom:1px solid #777;margin-bottom:6px}.bar b{font-size:15px;letter-spacing:.4px}.bar span{font-size:11px;color:#333}' +
     '.foot{margin-top:5px;font-size:9px;color:#555;text-align:right}' +
     '.rp td,.rp th{border:0.6px solid #9A9A9A;padding:2px 5px;font-size:12px;text-align:center;white-space:nowrap}.rp th{background:#E2E2E2;font-weight:700}.rp tr.z td{background:#F5F5F5}.rp tr.t td{background:#E8E8E8;font-weight:700}.rp td.l{text-align:left}.rp .none td{padding:14px;color:#444;font-style:italic}' +
-    '.s1 td:first-child{font-size:10.5px !important;letter-spacing:-.15px;padding:0 1px}' +
+    '.s1 td{font-size:16.5px !important;line-height:1.02;padding:0 3px}.s1 td:first-child{font-size:11.5px !important;letter-spacing:-.2px;padding:0 1px}' +
     'table{border-collapse:collapse;table-layout:fixed}td{padding:0 2px;overflow:hidden;line-height:1.15}' +
     '</style></head><body>' + secs.map(x => '<div class="sh ' + x.o + '"><div class="z ' + (x.c || '') + '"><div class="bar"><b>M.N. DYEING, PRINTING &amp; WASHING MILLS LTD.</b><span>ACTUAL FLOOR REPORT &middot; ' + x.nm + ' &middot; ' + labelOf(STATE.reportIso) + '</span></div>' + x.h + '<div class="foot">Printed ' + new Date().toLocaleString() + '</div></div></div>').join('') + '</body></html>';
   const fr = document.createElement('iframe');
@@ -2695,6 +2706,7 @@ $('viewBannerBtn').addEventListener('click', () => {
   input.addEventListener('change', e => { if(e.target.files.length) handleFiles(e.target.files); });
   input.click();
 });
+
 async function gGet(params){
   const u = GCFG().url; if(!u) throw new Error('no Google link');
   const res = await fetch(u + '?' + new URLSearchParams(params).toString(), {redirect:'follow'});
