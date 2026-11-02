@@ -2517,8 +2517,8 @@ $('bothBtn').addEventListener('click', async () => {
 });
 
 // The web app link is built in, so every browser/device starts with it already filled in. Change it here if you redeploy the script.
-const GOOGLE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbyAEVk2bXeucixnlWDaDqDJ6Oq8SGMR4hLUFaQlx5c67u8ZOQJ9bjtFAYcVgzDJDJ7d/exec';
-const GCFG = () => { let o = {}; try{ o = JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){} return {url: o.url || GOOGLE_DEFAULT_URL}; };
+const GOOGLE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbzJaVXgYFzuCmeSoTdtdfYmNb8mVHsgLGm0ZnL-tJZIwfNL0rnoCJJSLI0fXKDflk9DGw/exec';
+const GCFG = () => { let o = {}; try{ o = JSON.parse(localStorage.getItem('frr_google') || '{}'); }catch(e){} return {url: (o.url && !/AKfycbyAEVk2bXeucix/.test(o.url)) ? o.url : GOOGLE_DEFAULT_URL}; };   // the previous built-in link saved on a device is replaced by the new default
 
 /* ============================================================
    CORRECTED MAIN FILE — the original file is opened as a zip and only the corrected cells are rewritten,
