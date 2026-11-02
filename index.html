@@ -2432,7 +2432,11 @@ async function printActualBoth(){
   const n1 = parts[0].last1, body1 = Array.from({length:n1 - 3}, (_, k) => k + 3), two = body1.length > 44, cut = Math.ceil(body1.length / 2);
   const secs = two ? [{h:wsToHtml(w1, 15, n1, [0,1,2,...body1.slice(0, cut)]), o:'land', nm:'Sheet1 (1/2)', c:'s1'}, {h:wsToHtml(w1, 15, n1, [0,1,2,...body1.slice(cut)]), o:'land', nm:'Sheet1 (2/2)', c:'s1'}]
     : [{h:wsToHtml(w1, 15, n1), o:'land', nm:'Sheet1', c:'s1'}];
-  parts.forEach(p => secs.push({h:wsToHtml(p.ws2, 10, p.sg), o:'port', nm:'CATEGORY U' + p.u}));
+  parts.forEach(p => {   // Category print: tighter columns and rows, so the page scale (and with it the text) is bigger
+    p.ws2['!cols'] = [11,9.5,8,8,7.5,9,9,9.5,7.5,8].map(w => ({width: w + 1.2}));
+    p.ws2['!rows'] = (p.ws2['!rows'] || []).map(r => r && r.hpt ? {...r, hpt: Math.max(15, r.hpt * 0.8)} : r);
+    secs.push({h:wsToHtml(p.ws2, 10, p.sg), o:'port', nm:'CATEGORY U' + p.u});
+  });
   parts.forEach(p => secs.push({h:wsToHtml(p.ws3, 9, p.rs), o:'land', nm:'BATCHMC U' + p.u}));
   [1,2].forEach(u => secs.push({h:reprocPrintHtml(u), o:'land', nm:'REPROCESS U' + u}));
   /* margin 0 on the page = the browser prints no date / address / page-number lines; the 0.35 in border is made by the sheet itself, one sheet = exactly one page */
