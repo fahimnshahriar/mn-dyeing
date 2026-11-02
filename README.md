@@ -101,3 +101,19 @@ The `#` of a row turns green when it is a production batch (has a batch number a
 - Background Google checks run at most once a minute and never overlap; saved days show instantly from a local copy, then refresh.
 - Combined file: the TOTAL U1+2 sheet is now scaled to one A4 page (was spilling onto an extra page). Combined file prints 7 pages, every page filled with a small safety margin.
 - **LOADING % excludes SAMPLE:** BATCHMC, the page, the combined TOTAL and the PNG now use (production − sample) ÷ capacity of the machines.
+
+## Print button (floating panel)
+Floating download button → **Print: Actual file U1 + 2**. Opens the printer dialog for the combined Actual file: Sheet1 (2 pages, landscape), CATEGORY U1, CATEGORY U2 (portrait), BATCHMC U1, BATCHMC U2 (landscape). Each sheet is scaled to fill an A4 page. Choose A4 and "Margins: Default" in the print dialog.
+Also fixed: a start-up error ("cfgBusy before initialization") that could stop the saved-days list from loading.
+Print is now styled (navy/teal, soft zebra rows, light grid, header band with company + sheet + date, footer with print time) and ends with a REPROCESS page (R/M + R/W of the report day, both units, with total).
+Print: Sheet1 columns sized to content (date, MC 2 digits, cap 6, buyer 14, order 10, batch 15, fabric 10, qty 6, times), short headings, black & white palette.
+Print: browser header/footer lines are off (page margin 0), every sheet fills its A4 page (columns widened / rows stretched), light-grey eco-ink style.
+Reprocess export: separate sheets REPROCESS U1 and REPROCESS U2 (each filtered to the report day), plus BY DAY.
+Print: REPROCESS U1 and REPROCESS U2 are separate pages.
+Print Sheet1: narrower date column, larger font.
+Print Category: tighter columns/rows, bigger text.
+
+## Saved days on the start page (read back from Google)
+`apps-script/FloorReports.gs` now also ANSWERS the page: `?action=sums` (list of saved days), `?action=day` (rows of one day), `?action=settings` (buyer list) and stores the settings the page sends. Before, it could only receive data, so the start page said "Could not read saved days from Google".
+After pasting the new file: Deploy → Manage deployments → pencil → Version: **New version**. Leave `KEY` empty (the page sends no secret word). Then paste the /exec link in the page under "Settings · Google link".
+Every day you press **Send to Google** is then listed on the start page on any device, and the newest day opens by itself when you enter the link.
