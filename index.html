@@ -1526,6 +1526,11 @@ const reportLabel = () => /^\d{4}-/.test(STATE.reportIso) ? labelOf(STATE.report
 const dayRowsOf = (u, iso) => STATE.parsed.filter(r => r.unit === u && r.iso === iso);
 const reportRows = u => dayRowsOf(u, STATE.reportIso);
 const reprocKey = (u, iso) => 'u' + u + '_' + iso;
+/* WORKING DAY: a day on which not every shift ran counts less (1, 2/3, 1/2 or 1/3). Kept with your other fixes, so it is saved and shared like them. */
+const SHIFT_OPTS = [[1,'1'],[2/3,'2/3'],[1/2,'1/2'],[1/3,'1/3']];
+const shiftOf = (u, iso) => { const v = STATE.fixes['sh_' + reprocKey(u, iso)]; return typeof v === 'number' && v > 0 && v < 1 ? v : 1; };
+const wdFmt = n => Number.isInteger(n) ? n.toFixed(1) : (Math.round(n * 100) / 100).toFixed(2);
+const shLabel = v => (SHIFT_OPTS.find(o => Math.abs(o[0] - v) < 1e-6) || [0, String(Math.round(v * 100) / 100)])[1];
 /* REPROCESS (kg of R/M batches):
    1. a figure you typed is always kept (saved with your other fixes, shared between devices) and never recounted;
    2. otherwise it is counted from the R/M batches ONLY for the newest day loaded (today);
@@ -1588,7 +1593,9 @@ function monthReport(u){
   for(let d=1; d<=n; d++){ const k = isoOf(y,m,d); days.push(k > iso ? {iso:k, src:null} : figuresFor(u,k)); }
   const have = days.filter(x => x.src), S = key => have.reduce((s,x) => s + x[key], 0);
   const tot = {B:S('B'), C:S('C'), D:S('D'), F:S('F'), H:S('H'), J:S('J')};
-  return {u, y, m, n, iso, days, tot, wd: have.length, missing: days.filter(x => !x.src && x.iso < iso).map(x => +x.iso.slice(8)),
+  have.forEach(x => { x.sh = shiftOf(u, x.iso); });
+  const part = have.filter(x => x.sh < 1);
+  return {u, y, m, n, iso, days, tot, wd: have.reduce((t, x) => t + x.sh, 0), part, missing: days.filter(x => !x.src && x.iso < iso).map(x => +x.iso.slice(8)),
     bad: have.filter(x => !x.ok).map(x => +x.iso.slice(8))};
 }
 const pct = (a,b,dp) => b ? (a/b*100).toFixed(dp) + '%' : '';
@@ -1598,6 +1605,7 @@ const n0 = x => Number(x).toLocaleString('en-US');
 /* ============================================================
    FINAL REPORT PANE (what the superior gets) — shown on screen
    ============================================================ */
+const shSel = (x, dis) => `<select class="ct-shift" data-iso="${x.iso}" title="How much of a full working day (3 shifts) this day was" ${dis ? 'disabled' : ''}>${SHIFT_OPTS.map(o => '<option value="' + o[0] + '"' + (Math.abs(o[0] - (x.sh || 1)) < 1e-6 ? ' selected' : '') + '>' + (o[0] === 1 ? 'full day' : o[1] + ' day') + '</option>').join('')}</select>`;
 const SRC_LABEL = {today:'today', history:'saved', file:'from file', main:'main file', fixed:'fixed by you', gap:'no data yet'};
 function renderFinal(){
   const el = $('finalPane'); if(!el) return;
@@ -1614,18 +1622,18 @@ function renderFinal(){
     const num = (f) => `<input class="edit-input ct-in ct-day" data-iso="${iso}" data-f="${f}" type="number" min="0" step="1" value="${x[f]}">`;
     if(ed){ const cell = f => '<td>' + num(f) + '</td>';
       return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td>${cell('B')}${cell('C')}${cell('D')}<td>${pct(x.D,x.B,1)}</td>${cell('F')}<td>${pct(x.F,x.B,2)}</td>${cell('H')}<td>${pct(x.H,x.B,2)}</td>${cell('J')}
-        <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${fixed ? ' <button class="btn small" data-reset="' + iso + '">Undo my fix</button>' : ''}</td></tr>`; }
+        <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${fixed ? ' <button class="btn small" data-reset="' + iso + '">Undo my fix</button>' : ''} ${x.src === 'gap' ? '' : shSel(x, STATE.viewOnly)}</td></tr>`; }
     const fixBtn = (!x.ok && STATE.main && STATE.main.dayMap[iso] && !today && !STATE.viewOnly) ? ` <button class="btn small" data-fixday="${iso}">Fix the batches</button>` : '';
     const h = (today && !fixed) ? `<input class="edit-input ct-in" id="reprocInput"${STATE.viewOnly ? ' disabled' : ''} type="number" min="0" step="1" value="${x.H}" title="Reprocess kg (R/M, RM or Rematch batches). Counted automatically for today only. Type your own figure and it is kept; clear the box to count again">` : n0(x.H);
     return `<tr class="${today?'today':''} ${x.ok?'':'wrong'}"><td>${dmy(x.iso)}</td><td>${n0(x.B)}</td><td>${n0(x.C)}</td><td>${n0(x.D)}</td><td>${pct(x.D,x.B,1)}</td>
       <td>${n0(x.F)}</td><td>${pct(x.F,x.B,2)}</td><td>${h}</td><td>${pct(x.H,x.B,2)}</td><td>${n0(x.J)}</td>
-      <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${x.ok?'':' <span class="src bad">check</span>'}${fixBtn}</td></tr>`;
+      <td><span class="src ${x.src}">${SRC_LABEL[x.src]}</span>${x.ok?'':' <span class="src bad">check</span>'}${fixBtn} ${shSel(x, STATE.viewOnly)}</td></tr>`;
   }).join('');
   const T = mr.tot, wd = mr.wd || 1, mt = v => (v/1000);
   const foot = `<tr class="ft"><td>SUM (MT)</td><td>${mt(T.B).toFixed(2)}</td><td>${mt(T.C).toFixed(2)}</td><td>${mt(T.D).toFixed(2)}</td><td></td><td>${mt(T.F).toFixed(2)}</td><td></td><td>${mt(T.H).toFixed(2)}</td><td></td><td>${mt(T.J).toFixed(2)}</td><td></td></tr>
     <tr class="ft"><td>AVG (MT)</td><td>${(mt(T.B)/wd).toFixed(3)}</td><td>${(mt(T.C)/wd).toFixed(3)}</td><td>${(mt(T.D)/wd).toFixed(3)}</td><td></td><td>${(mt(T.F)/wd).toFixed(3)}</td><td></td><td>${(mt(T.H)/wd).toFixed(3)}</td><td></td><td>${(mt(T.J)/wd).toFixed(3)}</td><td></td></tr>
     <tr class="ft"><td>PERCENTAGE</td><td>100.00%</td><td>${pct(T.C,T.B,2)}</td><td>${pct(T.D,T.B,2)}</td><td></td><td>${pct(T.F,T.B,2)}</td><td></td><td>${pct(T.H,T.B,2)}</td><td></td><td>${pct(T.J,T.B,2)}</td><td></td></tr>
-    <tr class="ft"><td>WORKING DAYS</td><td>${mr.wd}</td><td colspan="9"></td></tr>`;
+    <tr class="ft"><td>WORKING DAYS</td><td>${wdFmt(mr.wd)}</td><td colspan="9" style="text-align:left;font-weight:400">${mr.part.length ? 'Part days: ' + mr.part.map(x => (+x.iso.slice(8)) + 'th = ' + shLabel(x.sh)).join(', ') : 'Every day counted as a full day. Use the box at the end of a day\'s row if not all 3 shifts ran.'}</td></tr>`;
   const notes = [];
   if(!sm.ok) notes.push(`<div class="note bad">Category check is WRONG for ${labelOf(STATE.reportIso)}: color + DPD + white/wash + sample = ${n0(sm.K)} kg but production is ${n0(sm.B)} kg (${n0(sm.B-sm.K)} kg not in a category). Fix it in <b>Needs a look</b>.</div>`);
   else notes.push(`<div class="note ok">Category check is OK for ${labelOf(STATE.reportIso)}.</div>`);
@@ -1655,6 +1663,10 @@ function renderFinal(){
       <div class="pill">LOADING <span class="n">${sm.loading === null ? '—' : sm.loading.toFixed(1) + ' %'}</span></div></div>`;
   const mpb = $('monthProbBtn'); if(mpb) mpb.onclick = openProblems;
   const ed = $('editDays'); if(ed) ed.onchange = () => { STATE.editDays = ed.checked; renderFinal(); };
+  el.querySelectorAll('.ct-shift').forEach(sel => sel.onchange = () => {
+    const k = 'sh_' + reprocKey(u, sel.dataset.iso), v = +sel.value;
+    if(v >= 1) delete STATE.fixes[k]; else STATE.fixes[k] = v;
+    persistBuyers(); renderFinal(); });
   el.querySelectorAll('.ct-day').forEach(inp => inp.onchange = () => {
     const iso = inp.dataset.iso, key = reprocKey(u, iso), base = figuresFor(u, iso), v = inp.value.trim();
     if(v === '' || isNaN(+v)){ renderFinal(); return; }
@@ -1925,6 +1937,7 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   S2('K4', {t:'s', v:"IF THE VALUE MATCHES\nTHEN U'RE RIGHT,\nIF DOESN'T, THEN CHECK THE CATEGORY IS RIGHT OR WRONG", s:{font:{name:'Calibri',sz:8,bold:true,color:{rgb:'C00000'}}, alignment:{wrapText:true,vertical:'top'}}});
   ['DATE','PRODUCTION QTY','COLOR','DPD','DPD (%)','WHITE / WASH','WHITE /\nWASH (%)','REPROCESS','R/M\n(%)','SAMPLE'].forEach((h,c) =>
     S2(XLSX.utils.encode_cell({r:4,c}), {t:'s', v:h, s:cellStyle('D9E2F3',{b:1,sz:12,wrap:1})}));
+  S2('M5', {t:'s', v:'SHIFT\n(day)', s:cellStyle('D9E2F3',{b:1,sz:12,wrap:1})});   // 1 = all 3 shifts ran, 1/3 = one shift; the WORKING DAY total adds this column
   const FMT = {B:'0',C:'0',D:'0',E:'0.0%',F:'0',G:'0.00%',H:'0',I:'0.00%',J:'0'};
   const base = cellStyle(null,{sz:12});
   mr.days.forEach(x => {
@@ -1932,6 +1945,7 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
     S2('A'+r, {t:'n', v: Date.UTC(Y,Mo-1,d)/86400000 + 25569, z:'d-mmm-yy', s:{...base}});
     'BCDEFGHIJ'.split('').forEach(c => S2(c+r, {t:'s', v:'', s:{...base}}));
     if(!x.src) return;
+    S2('M'+r, {t:'n', v:x.sh || 1, z:'# ?/?', s:{...cellStyle(null,{sz:12}), alignment:{horizontal:'center'}}});
     const live = x.src === 'today';
     const set = (c, val, f) => S2(c+r, {...(f && live ? fcell(f, val) : {t:'n', v:val}), z:FMT[c], s:{...base}});
     set('B', x.B, `SUMIFS(${rng('I')},${rng('B')},">=${cfg.lo}",${rng('B')},"<=${cfg.hi}")+SUMIFS(${rng('I')},${rng('B')},"${cfg.sample}")`);
@@ -1958,12 +1972,12 @@ function buildActualXlsx(u, ctx){   // ctx = {rows, R} when Sheet1 holds both un
   fr('AVG(MT)', sumRow+1, {B:avgV('B',T.B), C:avgV('C',T.C), D:avgV('D',T.D), F:avgV('F',T.F), H:avgV('H',T.H), J:avgV('J',T.J)}, 11);
   const pV = (c, v) => ({...fcell(`${c}${sumRow+1}/$B${sumRow+1}`, T.B ? v/T.B : 0), z:'0.00%'});
   fr('PERCENTAGE=', sumRow+2, {B:{...fcell(`B${sumRow}/B${sumRow}`, 1), z:'0.00%'}, C:pV('C',T.C), D:pV('D',T.D), F:pV('F',T.F), H:pV('H',T.H), J:pV('J',T.J)}, 10);
-  fr('WORKING DAY=', sumRow+3, {B:{...fcell(`COUNT(B${first}:B${last})`, mr.wd), z:'0.0'}}, 10);
+  fr('WORKING DAY=', sumRow+3, {B:{...fcell(`SUM(M${first}:M${last})`, mr.wd), z:'0.0#'}}, 10);
   const sg = sumRow + 10;
   [['B','PREPARED BY'],['D','MANAGER'],['G','AGM'],['I','GM']].forEach(([c,t]) => S2(c+sg, {t:'s', v:t, s:{font:{name:'Calibri',sz:12,underline:true}, alignment:{horizontal:'center'}}}));
   merges2.push({s:{r:sg-1,c:3},e:{r:sg-1,c:4}});
-  ws2['!ref'] = 'A1:L' + sg; ws2['!merges'] = merges2;
-  ws2['!cols'] = [13.29,16,13.71,14.43,10.29,12.71,15.43,12.14,11.57,12.43,22.71,10].map(w => ({width:w}));
+  ws2['!ref'] = 'A1:M' + sg; ws2['!merges'] = merges2;
+  ws2['!cols'] = [13.29,16,13.71,14.43,10.29,12.71,15.43,12.14,11.57,12.43,22.71,10,9].map(w => ({width:w}));
   ws2['!rows'] = []; ws2['!rows'][1] = {hpt:23.1}; ws2['!rows'][3] = {hpt:26.1}; ws2['!rows'][4] = {hpt:34.5};   // heights as in your edited file
   for(let r = first; r <= last; r++) ws2['!rows'][r-1] = {hpt:26.1};
   for(let r = sumRow; r <= sumRow + 3; r++) ws2['!rows'][r-1] = {hpt:20.1};
@@ -2260,7 +2274,7 @@ function buildMessage(){
     const L = ['UNIT-0' + u, 'Dear Sir,', 'Dyeing Production Date : ' + labelOf(iso), '', 'Total Production : ' + mt(q.B), '',
       'White/Wash : ' + (q.B ? (q.F/q.B*100).toFixed(2) : '0') + '%', 'DPD : ' + (q.B ? (q.D/q.B*100).toFixed(1) : '0') + '%',
       'Avg Loading : ' + (sm.loading === null ? '—' : sm.loading.toFixed(1)) + '%', 'AVG Batch/M/c : ' + sm.avgBatch.toFixed(2)];
-    if(mr){ L.push('', Mon + ' Total : ' + mt(mr.tot.B), Mon + ' (AVG) : ' + (wd ? mt(mr.tot.B/wd) : '—'), 'Total Working Day (' + Mon + ') : ' + pad2(wd)); }
+    if(mr){ L.push('', Mon + ' Total : ' + mt(mr.tot.B), Mon + ' (AVG) : ' + (wd ? mt(mr.tot.B/wd) : '—'), 'Total Working Day (' + Mon + ') : ' + (Number.isInteger(wd) ? pad2(wd) : wdFmt(wd))); }
     out.push(L.join('\n')); });
   return out.join('\n\n');
 }
@@ -2325,7 +2339,7 @@ function buildFinalPdf(u){
     ['SUM (MT)',  [mt(T.B).toFixed(2), mt(T.C).toFixed(2), mt(T.D).toFixed(2), '', mt(T.F).toFixed(2), '', mt(T.H).toFixed(3), '', mt(T.J).toFixed(2)], 9],
     ['AVG (MT)',  [(mt(T.B)/wd).toFixed(3), (mt(T.C)/wd).toFixed(3), (mt(T.D)/wd).toFixed(3), '', (mt(T.F)/wd).toFixed(3), '', (mt(T.H)/wd).toFixed(3), '', (mt(T.J)/wd).toFixed(3)], 8.5],
     ['PERCENTAGE=', ['100.00%', pct(T.C,T.B,2), pct(T.D,T.B,2), '', pct(T.F,T.B,2), '', pct(T.H,T.B,2), '', pct(T.J,T.B,2)], 6.5],
-    ['WORKING DAY=', [mr.wd.toFixed(1), '', '', '', '', '', '', '', ''], 6.5]];
+    ['WORKING DAY=', [wdFmt(mr.wd), '', '', '', '', '', '', '', ''], 6.5]];
   foot.forEach(([lbl, vals, sz]) => { let xx = 10; [lbl, ...vals].forEach((v,i) => { cell(xx, y, cw[i], 6, v, {fill:'D9D9D9', bold:1, size:i===0?sz:8.5}); xx += cw[i]; }); y += 6; });
   sign([[14,36,'PREPARED BY'],[62,36,'MANAGER'],[112,36,'AGM'],[160,36,'GM']], 281);
 
@@ -2435,7 +2449,8 @@ async function printActualBoth(){
   parts.forEach(p => {   // Category print: tighter columns and rows, so the page scale (and with it the text) is bigger
     p.ws2['!cols'] = [11,9.5,8,8,7.5,9,9,9.5,7.5,8].map(w => ({width: w + 1.2}));
     p.ws2['!rows'] = (p.ws2['!rows'] || []).map(r => r && r.hpt ? {...r, hpt: Math.max(15, r.hpt * 0.8)} : r);
-    secs.push({h:wsToHtml(p.ws2, 10, p.sg), o:'port', nm:'CATEGORY U' + p.u});
+    const mrp = monthReport(p.u), pn = mrp && mrp.part.length ? '<div class="foot" style="text-align:left;font-size:11px;color:#000">Part days (not all shifts ran): ' + mrp.part.map(x => (+x.iso.slice(8)) + 'th = ' + shLabel(x.sh)).join(', ') + '</div>' : '';
+    secs.push({h:wsToHtml(p.ws2, 10, p.sg) + pn, o:'port', nm:'CATEGORY U' + p.u});
   });
   parts.forEach(p => secs.push({h:wsToHtml(p.ws3, 9, p.rs), o:'land', nm:'BATCHMC U' + p.u}));
   [1,2].forEach(u => secs.push({h:reprocPrintHtml(u), o:'land', nm:'REPROCESS U' + u}));
